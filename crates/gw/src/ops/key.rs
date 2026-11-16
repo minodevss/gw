@@ -58,7 +58,7 @@ pub(crate) fn snippets(base_url: &str, key: &str) -> Vec<Snippet> {
         Snippet {
             client: "Codex",
             text: format!(
-                "~/.codex/config.toml\nmodel_provider = \"gw\"\n\n[model_providers.gw]\nname = \"gw\"\nbase_url = \"{base_url}/v1\"\nwire_api = \"responses\"\nenv_key = \"GW_API_KEY\"\nmodel_catalog_url = \"{base_url}/codex/models\"\n\n~/.codex/no-web-search.config.toml  (OpenAI가 아닌 모델용: codex -p no-web-search -m <모델>)\nmodel_provider = \"gw\"\nweb_search = \"disabled\"\n\n[features]\nmulti_agent = false\n\nshell\nexport GW_API_KEY={key}\n"
+                "~/.codex/config.toml\nmodel_provider = \"gw\"\n\n[model_providers.gw]\nname = \"gw\"\nbase_url = \"{base_url}/v1\"\nwire_api = \"responses\"\nenv_key = \"GW_API_KEY\"\nmodel_catalog_url = \"{base_url}/codex/models\"\n\n~/.codex/no-web-search.config.toml  (for non-OpenAI models: codex -p no-web-search -m <model>)\nmodel_provider = \"gw\"\nweb_search = \"disabled\"\n\n[features]\nmulti_agent = false\n\nshell\nexport GW_API_KEY={key}\n"
             ),
         },
         Snippet {

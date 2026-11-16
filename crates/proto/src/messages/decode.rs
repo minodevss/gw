@@ -125,8 +125,8 @@ pub fn decode_request(body: &[u8]) -> Result<Request, Rejection> {
     let (thinking, reasoning_summary) = decode_thinking(fields.take("thinking")?);
     let (effort, structured_output) = decode_output_config(fields.take("output_config")?)?;
     let speed = decode_speed(fields.take::<String>("speed")?.as_deref())?;
-    // Claude Code fills metadata.user_id with its device, account and session ids; it identifies the
-    // client to Anthropic and is not forwarded to other upstreams (design appendix A.1).
+    // Claude Code fills metadata.user_id with its device, account and session ids. It identifies the
+    // client to Anthropic only, so it is not forwarded to other upstreams.
     fields.take::<MetadataIn>("metadata")?;
     let user = None;
 
