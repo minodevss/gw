@@ -1,0 +1,43 @@
+---
+source: crates/proto/tests/chat.rs
+expression: "decode_response(RESPONSE.as_bytes()).expect(\"decodes\")"
+---
+Response {
+    id: "chatcmpl-1",
+    model: "kimi-k2",
+    output: [
+        Reasoning(
+            Reasoning {
+                text: "Need the weather.",
+                summary: [],
+                origin: Plain,
+            },
+        ),
+        Message {
+            role: Assistant,
+            parts: [
+                Text(
+                    "Checking.",
+                ),
+            ],
+        },
+        ToolCall(
+            ToolCall {
+                id: "call_1",
+                name: "get_weather",
+                kind: Function,
+                arguments: "{\"city\":\"Paris\"}",
+            },
+        ),
+    ],
+    stop: ToolUse,
+    usage: Usage {
+        input_uncached: 20,
+        cache_read: 80,
+        cache_write: 0,
+        output: 30,
+        reasoning: Some(
+            12,
+        ),
+    },
+}

@@ -1,0 +1,14 @@
+---
+source: crates/gw/src/tui/log.rs
+expression: text
+---
+ TIME     KEY       SESSION MODEL                     ACCOUNT                  REASON STATUS IN (CACHE)    OUT    TIME
+ 08:00:01 macbook   3f2a…   claude-opus-5-5           anthropic-oauth-1        reused 200    12.4k (11.9k) 812    4.1s
+ 08:00:02 macbook   3f2a…   claude-opus-5-5           anthropic-oauth-2        reused 429    12.4k (11.9k) 812    4.1s
+▶08:00:03 macbook   3f2a…   claude-opus-5-5           openai-codex-1           reused 200    12.4k (11.9k) 812    4.1s
+
+
+
+
+
+                                                                                                               following

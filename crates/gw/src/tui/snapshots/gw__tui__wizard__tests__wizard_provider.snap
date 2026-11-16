@@ -1,0 +1,15 @@
+---
+source: crates/gw/src/tui/wizard.rs
+expression: text
+---
+
+
+
+
+       ┌ Add account  ① provider ② method ③ sign in ④ done ───────────────────────┐
+       │▶ openai      siwc · codex · key                                          │
+       │  anthropic   oauth · setup-token · key                                   │
+       │  zai         plan · key                                                  │
+       │  moonshot    plan · key                                                  │
+       │  custom      custom                                                      │
+       └──────────────────────────────────────────────────────────────────────────┘

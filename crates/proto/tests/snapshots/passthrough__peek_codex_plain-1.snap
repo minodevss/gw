@@ -1,0 +1,12 @@
+---
+source: crates/proto/tests/passthrough.rs
+expression: peek_view(&peeked)
+---
+{
+  "cache_key": "01a1e35f-ebc6-7183-aad9-72697c16649e",
+  "cache_ttl": null,
+  "features": [],
+  "model": "gpt-5",
+  "previous_response": false,
+  "stream": true
+}

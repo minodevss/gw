@@ -1,0 +1,15 @@
+---
+source: crates/gw/src/tui/wizard.rs
+expression: text
+---
+
+
+
+
+
+       ┌ Add account  ① provider ② method ③ sign in ④ done ───────────────────────┐
+       │openai · key (API key)                                                    │
+       │                                                                          │
+       │▶ key    ••••••••••••••                                                   │
+       │  name   openai-key-1                                                     │
+       └──────────────────────────────────────────────────────────────────────────┘

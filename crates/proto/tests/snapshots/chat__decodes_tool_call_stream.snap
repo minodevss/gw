@@ -1,0 +1,58 @@
+---
+source: crates/proto/tests/chat.rs
+expression: "decode_stream(&frames(&fixture(\"chat-tool_call.sse\")))"
+---
+[
+    Start {
+        id: "chatcmpl-tool",
+        model: "gpt-4o-mini",
+    },
+    BlockStart {
+        index: 0,
+        block: ToolCall {
+            id: "call_abc123",
+            name: "get_weather",
+            kind: Function,
+        },
+    },
+    ToolArgumentsDelta {
+        index: 0,
+        json: "{\"city\":",
+    },
+    ToolArgumentsDelta {
+        index: 0,
+        json: "\"Paris\"}",
+    },
+    BlockStart {
+        index: 1,
+        block: ToolCall {
+            id: "call_def456",
+            name: "get_time",
+            kind: Function,
+        },
+    },
+    ToolArgumentsDelta {
+        index: 1,
+        json: "{\"tz\":\"UTC\"}",
+    },
+    BlockStop {
+        index: 0,
+    },
+    BlockStop {
+        index: 1,
+    },
+    Usage(
+        Usage {
+            input_uncached: 20,
+            cache_read: 100,
+            cache_write: 0,
+            output: 40,
+            reasoning: Some(
+                0,
+            ),
+        },
+    ),
+    Stop(
+        ToolUse,
+    ),
+]

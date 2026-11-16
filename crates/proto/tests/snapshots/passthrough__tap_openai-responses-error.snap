@@ -1,0 +1,14 @@
+---
+source: crates/proto/tests/passthrough.rs
+expression: whole
+---
+{
+  "error": {
+    "code": "ERR_SOMETHING",
+    "message": "Something went wrong",
+    "param": null,
+    "sequence_number": 1,
+    "type": "error"
+  },
+  "usage": null
+}

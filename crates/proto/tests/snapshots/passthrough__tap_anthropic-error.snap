@@ -1,0 +1,14 @@
+---
+source: crates/proto/tests/passthrough.rs
+expression: whole
+---
+{
+  "error": {
+    "error": {
+      "message": "Overloaded",
+      "type": "overloaded_error"
+    },
+    "type": "error"
+  },
+  "usage": null
+}

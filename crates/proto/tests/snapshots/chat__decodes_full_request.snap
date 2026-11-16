@@ -1,0 +1,191 @@
+---
+source: crates/proto/tests/chat.rs
+expression: "decode_request(REQUEST.as_bytes()).expect(\"decodes\")"
+---
+Request {
+    model: "gpt-4o",
+    system: [
+        Text(
+            "You are terse.",
+        ),
+        Text(
+            "Use metric units.",
+        ),
+    ],
+    items: [
+        Message {
+            role: User,
+            parts: [
+                Text(
+                    "What is in this picture?",
+                ),
+                Image(
+                    Base64 {
+                        media_type: "image/png",
+                        data: "AAAA",
+                    },
+                ),
+                Document(
+                    Document {
+                        media: Base64 {
+                            media_type: "application/pdf",
+                            data: "BBBB",
+                        },
+                        title: Some(
+                            "a.pdf",
+                        ),
+                    },
+                ),
+            ],
+        },
+        Reasoning(
+            Reasoning {
+                text: "Check the image first.",
+                summary: [],
+                origin: Plain,
+            },
+        ),
+        Message {
+            role: Assistant,
+            parts: [
+                Text(
+                    "Let me look.",
+                ),
+            ],
+        },
+        ToolCall(
+            ToolCall {
+                id: "call_1",
+                name: "zoom",
+                kind: Function,
+                arguments: "{\"x\":1}",
+            },
+        ),
+        ToolCall(
+            ToolCall {
+                id: "call_2",
+                name: "crop",
+                kind: Function,
+                arguments: "{}",
+            },
+        ),
+        ToolResult(
+            ToolResult {
+                call_id: "call_1",
+                kind: Function,
+                parts: [
+                    Text(
+                        "zoomed",
+                    ),
+                ],
+                is_error: false,
+            },
+        ),
+        ToolResult(
+            ToolResult {
+                call_id: "call_2",
+                kind: Function,
+                parts: [
+                    Text(
+                        "a",
+                    ),
+                    Text(
+                        "b",
+                    ),
+                ],
+                is_error: false,
+            },
+        ),
+        System {
+            parts: [
+                Text(
+                    "Late instruction.",
+                ),
+            ],
+        },
+        Message {
+            role: User,
+            parts: [
+                Text(
+                    "Thanks",
+                ),
+            ],
+        },
+    ],
+    tools: [
+        Function {
+            name: "zoom",
+            description: Some(
+                "Zoom in",
+            ),
+            parameters: RawJson(
+                RawValue(
+                    {"type": "object",  "properties": {"x": {"type": "integer"}}},
+                ),
+            ),
+            strict: Some(
+                true,
+            ),
+        },
+        Function {
+            name: "crop",
+            description: None,
+            parameters: RawJson(
+                RawValue(
+                    {"type":"object","properties":{}},
+                ),
+            ),
+            strict: None,
+        },
+    ],
+    tool_choice: Some(
+        Named(
+            "zoom",
+        ),
+    ),
+    parallel_tool_calls: Some(
+        false,
+    ),
+    max_output_tokens: Some(
+        512,
+    ),
+    temperature: Some(
+        0.2,
+    ),
+    top_p: Some(
+        0.9,
+    ),
+    stop: [
+        "END",
+    ],
+    effort: Some(
+        High,
+    ),
+    thinking: None,
+    reasoning_summary: false,
+    speed: Some(
+        Fast,
+    ),
+    structured_output: Some(
+        StructuredOutput {
+            name: Some(
+                "answer",
+            ),
+            schema: RawJson(
+                RawValue(
+                    {"type": "object"},
+                ),
+            ),
+            strict: Some(
+                true,
+            ),
+        },
+    ),
+    stream: true,
+    cache_key: Some(
+        "session-1",
+    ),
+    user: Some(
+        "u-1",
+    ),
+}

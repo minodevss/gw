@@ -1,0 +1,16 @@
+---
+source: crates/gw/src/tui/wizard.rs
+expression: text
+---
+
+
+
+
+       ┌ Add account  ① provider ② method ③ sign in ④ done ───────────────────────┐
+       │openai · codex (device code)                                              │
+       │                                                                          │
+       │1. open   https://auth.openai.com/codex/device    y copy                  │
+       │2. enter  ABCD-EFGH                                                       │
+       │                                                                          │
+       │waiting for approval…  expires in 14:32                                   │
+       └──────────────────────────────────────────────────────────────────────────┘

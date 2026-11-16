@@ -1,0 +1,122 @@
+---
+source: crates/proto/tests/responses.rs
+expression: pretty(&encoded(&req))
+---
+{
+  "include": [
+    "reasoning.encrypted_content"
+  ],
+  "input": [
+    {
+      "content": [
+        {
+          "text": "be brief",
+          "type": "input_text"
+        }
+      ],
+      "role": "developer",
+      "type": "message"
+    },
+    {
+      "content": [
+        {
+          "text": "go",
+          "type": "input_text"
+        }
+      ],
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "content": [
+        {
+          "text": "ok",
+          "type": "output_text"
+        }
+      ],
+      "role": "assistant",
+      "type": "message"
+    },
+    {
+      "content": [
+        {
+          "text": "note",
+          "type": "input_text"
+        }
+      ],
+      "role": "developer",
+      "type": "message"
+    },
+    {
+      "call_id": "c1",
+      "input": "*** Begin",
+      "name": "apply_patch",
+      "type": "custom_tool_call"
+    },
+    {
+      "call_id": "c1",
+      "output": [
+        {
+          "text": "done",
+          "type": "input_text"
+        },
+        {
+          "image_url": "https://x/y.png",
+          "type": "input_image"
+        }
+      ],
+      "type": "custom_tool_call_output"
+    }
+  ],
+  "max_output_tokens": 1000,
+  "model": "gpt-5",
+  "parallel_tool_calls": false,
+  "prompt_cache_key": "session",
+  "reasoning": {
+    "effort": "xhigh",
+    "summary": "auto"
+  },
+  "service_tier": "priority",
+  "store": false,
+  "stream": true,
+  "temperature": 0.25,
+  "text": {
+    "format": {
+      "name": "answer",
+      "schema": {
+        "type": "object"
+      },
+      "strict": true,
+      "type": "json_schema"
+    }
+  },
+  "tool_choice": {
+    "name": "apply_patch",
+    "type": "custom"
+  },
+  "tools": [
+    {
+      "description": "run",
+      "name": "exec",
+      "parameters": {
+        "properties": {
+          "cmd": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    },
+    {
+      "format": {
+        "type": "grammar"
+      },
+      "name": "apply_patch",
+      "type": "custom"
+    }
+  ],
+  "top_p": 0.5,
+  "user": "u"
+}

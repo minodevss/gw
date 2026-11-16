@@ -1,0 +1,19 @@
+---
+source: crates/gw/src/tui/keys.rs
+expression: text
+---
+
+  ┌ New key macbook ───────────────────────────────────────────────────────────────────┐
+  │ Key │ Claude Code │ Codex │ opencode │ pi                                          │
+  │                                                                                    │
+  │gw_secret                                                                           │
+  │                                                                                    │
+  │shown once: only its hash is stored, so copy it now.                                │
+  │enter closes this window.                                                           │
+  │                                                                                    │
+  │                                                                                    │
+  │                                                                                    │
+  │                                                                                    │
+  │                                                                                    │
+  │                                                                                    │
+  └────────────────────────────────────────────────────────────────────────────────────┘

@@ -1,0 +1,35 @@
+---
+source: crates/proto/tests/responses.rs
+expression: events
+---
+[
+    Start {
+        id: "resp_67ccfcdd16748190a91872c75d38539e09e4d4aac714747c",
+        model: "gpt-6-astra",
+    },
+    BlockStart {
+        index: 0,
+        block: Text,
+    },
+    TextDelta {
+        index: 0,
+        text: "In",
+    },
+    BlockStop {
+        index: 0,
+    },
+    Usage(
+        Usage {
+            input_uncached: 0,
+            cache_read: 0,
+            cache_write: 0,
+            output: 0,
+            reasoning: Some(
+                0,
+            ),
+        },
+    ),
+    Stop(
+        EndTurn,
+    ),
+]

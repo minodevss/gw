@@ -1,0 +1,5 @@
+---
+source: crates/proto/tests/messages.rs
+expression: encode(&request)
+---
+{"model":"claude-opus-5-5","max_tokens":1024,"stream":false,"thinking":{"type":"adaptive"},"cache_control":{"type":"ephemeral"},"system":[{"type":"text","text":"be brief","cache_control":{"type":"ephemeral"}}],"messages":[{"role":"user","content":[{"type":"text","text":"see"},{"type":"image","source":{"type":"url","url":"https://example.com/a.png"}},{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"JVBER"},"title":"spec"}]},{"role":"assistant","content":[{"type":"redacted_thinking","data":"red"},{"type":"text","text":"done"}]}]}

@@ -1,0 +1,56 @@
+---
+source: crates/proto/tests/responses.rs
+expression: pretty(&encoded(&decoded))
+---
+{
+  "include": [
+    "reasoning.encrypted_content"
+  ],
+  "input": [
+    {
+      "content": [
+        {
+          "text": "patch it",
+          "type": "input_text"
+        }
+      ],
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "call_id": "c1",
+      "input": "*** Begin",
+      "name": "apply_patch",
+      "type": "custom_tool_call"
+    },
+    {
+      "call_id": "c1",
+      "output": [
+        {
+          "text": "ok",
+          "type": "input_text"
+        }
+      ],
+      "type": "custom_tool_call_output"
+    }
+  ],
+  "model": "gpt-5",
+  "store": false,
+  "stream": false,
+  "tool_choice": {
+    "name": "apply_patch",
+    "type": "custom"
+  },
+  "tools": [
+    {
+      "description": "d",
+      "format": {
+        "definition": "start: x",
+        "syntax": "lark",
+        "type": "grammar"
+      },
+      "name": "apply_patch",
+      "type": "custom"
+    }
+  ]
+}

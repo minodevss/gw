@@ -1,0 +1,14 @@
+---
+source: crates/proto/tests/passthrough.rs
+expression: whole
+---
+{
+  "error": null,
+  "usage": {
+    "cache_read": 0,
+    "cache_write": 0,
+    "input_uncached": 0,
+    "output": 0,
+    "reasoning": 0
+  }
+}

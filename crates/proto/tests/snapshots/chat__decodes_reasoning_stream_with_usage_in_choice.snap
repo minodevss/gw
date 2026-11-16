@@ -1,0 +1,48 @@
+---
+source: crates/proto/tests/chat.rs
+expression: "decode_stream(&frames(&fixture(\"chat-reasoning.sse\")))"
+---
+[
+    Start {
+        id: "chatcmpl-reason",
+        model: "kimi-k2-thinking",
+    },
+    BlockStart {
+        index: 0,
+        block: Reasoning,
+    },
+    ReasoningDelta {
+        index: 0,
+        text: "The user greets me.",
+    },
+    ReasoningDelta {
+        index: 0,
+        text: " Reply politely.",
+    },
+    BlockStop {
+        index: 0,
+    },
+    BlockStart {
+        index: 1,
+        block: Text,
+    },
+    TextDelta {
+        index: 1,
+        text: "Hi!",
+    },
+    BlockStop {
+        index: 1,
+    },
+    Usage(
+        Usage {
+            input_uncached: 20,
+            cache_read: 10,
+            cache_write: 0,
+            output: 20,
+            reasoning: None,
+        },
+    ),
+    Stop(
+        EndTurn,
+    ),
+]

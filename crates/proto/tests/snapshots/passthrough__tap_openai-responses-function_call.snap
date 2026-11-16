@@ -1,0 +1,8 @@
+---
+source: crates/proto/tests/passthrough.rs
+expression: whole
+---
+{
+  "error": null,
+  "usage": null
+}

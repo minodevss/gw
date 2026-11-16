@@ -1,0 +1,296 @@
+---
+source: crates/proto/tests/responses.rs
+expression: pretty(&encoded(&decoded))
+---
+{
+  "include": [
+    "reasoning.encrypted_content"
+  ],
+  "input": [
+    {
+      "content": [
+        {
+          "text": "You are a coding agent running in the Codex CLI,...",
+          "type": "input_text"
+        },
+        {
+          "text": "<skills_instructions>\n## Skills\nA skill is a set...",
+          "type": "input_text"
+        },
+        {
+          "text": "<permissions instructions>\nFilesystem sandboxing...",
+          "type": "input_text"
+        }
+      ],
+      "role": "developer",
+      "type": "message"
+    },
+    {
+      "content": [
+        {
+          "text": "<environment_context>\n  <cwd>/home/user/project<...",
+          "type": "input_text"
+        }
+      ],
+      "role": "user",
+      "type": "message"
+    },
+    {
+      "content": [
+        {
+          "text": "Say hello in one short sentence.",
+          "type": "input_text"
+        }
+      ],
+      "role": "user",
+      "type": "message"
+    }
+  ],
+  "model": "gpt-5",
+  "parallel_tool_calls": true,
+  "prompt_cache_key": "01a1e35f-ebc6-7183-aad9-72697c16649e",
+  "reasoning": {
+    "summary": "auto"
+  },
+  "store": false,
+  "stream": true,
+  "tool_choice": "auto",
+  "tools": [
+    {
+      "description": "Runs a command in a PTY, returning output or a s...",
+      "name": "exec_command",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "cmd": {
+            "description": "Shell command to execute.",
+            "type": "string"
+          },
+          "justification": {
+            "description": "User-facing approval question for `require_escal...",
+            "type": "string"
+          },
+          "login": {
+            "description": "True runs the shell with -l/-i semantics; false ...",
+            "type": "boolean"
+          },
+          "max_output_tokens": {
+            "description": "Output token budget. Defaults to 10000 tokens; l...",
+            "type": "number"
+          },
+          "prefix_rule": {
+            "description": "Reusable approval prefix for `cmd`, only with `s...",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sandbox_permissions": {
+            "description": "Per-command sandbox override. Defaults to `use_d...",
+            "enum": [
+              "use_default",
+              "require_escalated"
+            ],
+            "type": "string"
+          },
+          "shell": {
+            "description": "Shell binary to launch. Defaults to the user's d...",
+            "type": "string"
+          },
+          "tty": {
+            "description": "True allocates a PTY for the command; false or o...",
+            "type": "boolean"
+          },
+          "workdir": {
+            "description": "Working directory for the command. Defaults to t...",
+            "type": "string"
+          },
+          "yield_time_ms": {
+            "description": "Wait before yielding output. Defaults to 10000 m...",
+            "type": "number"
+          }
+        },
+        "required": [
+          "cmd"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    },
+    {
+      "description": "Writes characters to an existing unified exec se...",
+      "name": "write_stdin",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "chars": {
+            "description": "Bytes to write to stdin. Defaults to empty, whic...",
+            "type": "string"
+          },
+          "max_output_tokens": {
+            "description": "Output token budget. Defaults to 10000 tokens; l...",
+            "type": "number"
+          },
+          "session_id": {
+            "description": "Identifier of the running unified exec session.",
+            "type": "number"
+          },
+          "yield_time_ms": {
+            "description": "Wait before yielding output. Non-empty writes de...",
+            "type": "number"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    },
+    {
+      "description": "Request user input for one to three short questi...",
+      "name": "request_user_input",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "questions": {
+            "description": "Questions to show the user. Prefer 1 and do not ...",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "header": {
+                  "description": "Short header label shown in the UI (12 or fewer ...",
+                  "type": "string"
+                },
+                "id": {
+                  "description": "Stable identifier for mapping answers (snake_cas...",
+                  "type": "string"
+                },
+                "options": {
+                  "description": "Provide 2-3 mutually exclusive choices. Put the ...",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "description": {
+                        "description": "One short sentence explaining impact/tradeoff if...",
+                        "type": "string"
+                      },
+                      "label": {
+                        "description": "User-facing label (1-5 words).",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "description"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "description": "Single-sentence prompt shown to the user.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "header",
+                "question",
+                "options"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "questions"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    },
+    {
+      "description": "View a local image file from the filesystem when...",
+      "name": "view_image",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Local filesystem path to an image file.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    },
+    {
+      "description": "Get the current goal for this thread, including ...",
+      "name": "get_goal",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    },
+    {
+      "description": "Create a goal only when explicitly requested by ...",
+      "name": "create_goal",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "objective": {
+            "description": "Required. The concrete objective to start pursui...",
+            "type": "string"
+          },
+          "token_budget": {
+            "description": "Positive token budget for the new goal. Omit unl...",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "objective"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    },
+    {
+      "description": "Update the existing goal.\nSet status to `paused`...",
+      "name": "update_goal",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "description": "Required. `paused` requires an explicit user req...",
+            "enum": [
+              "complete",
+              "blocked",
+              "paused"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "strict": false,
+      "type": "function"
+    }
+  ]
+}

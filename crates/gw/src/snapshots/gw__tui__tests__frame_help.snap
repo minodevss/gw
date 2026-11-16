@@ -1,0 +1,30 @@
+---
+source: crates/gw/src/tui.rs
+expression: text
+---
+ gw  1 Accounts  2 Keys  3 Models  4 Log  0 limited · 1 inactive    server: running 100.64.0.2:8787
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ NAME                 METHOD      STATE    WINDOW 1            WINDOW 2            RESET  AS OF   │
+│▶openai-key-1         key         ok       —                   —                   —      —       │
+│ openai-key-2         key         inactive —                   —                   —      —       │
+│                     ┌ Help · Accounts ─────────────────────────────────────┐                     │
+│                     │1-4         screen                                    │                     │
+│                     │j/k         move                                      │                     │
+│                     │g           top                                       │                     │
+│                     │G           bottom                                    │                     │
+│                     │n           add                                       │                     │
+│                     │l           login                                     │                     │
+│                     │d           remove                                    │                     │
+│                     │R           refresh                                   │                     │
+│                     │/           filter                                    │                     │
+│                     │enter       detail                                    │                     │
+│ openai-key-1 ───────│y           copy selected name (OSC 52)               │─────────────────────│
+│openai · key · api · │esc         back                                      │                     │
+│limits    —          │?           help                                      │                     │
+│tokens    loading…   │q, ctrl-c   quit                                      │                     │
+│                     └──────────────────────────────────────────────────────┘                     │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+ esc close

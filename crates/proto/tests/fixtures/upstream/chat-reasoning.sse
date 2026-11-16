@@ -1,0 +1,12 @@
+data: {"id":"chatcmpl-reason","object":"chat.completion.chunk","created":1694268190,"model":"kimi-k2-thinking","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-reason","object":"chat.completion.chunk","created":1694268190,"model":"kimi-k2-thinking","choices":[{"index":0,"delta":{"reasoning_content":"The user greets me."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-reason","object":"chat.completion.chunk","created":1694268190,"model":"kimi-k2-thinking","choices":[{"index":0,"delta":{"reasoning_content":" Reply politely."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-reason","object":"chat.completion.chunk","created":1694268190,"model":"kimi-k2-thinking","choices":[{"index":0,"delta":{"content":"Hi!"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-reason","object":"chat.completion.chunk","created":1694268190,"model":"kimi-k2-thinking","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":30,"completion_tokens":20,"total_tokens":50,"cached_tokens":10}}]}
+
+data: [DONE]
+

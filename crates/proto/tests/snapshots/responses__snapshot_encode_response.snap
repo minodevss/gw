@@ -1,0 +1,73 @@
+---
+source: crates/proto/tests/responses.rs
+expression: pretty(&encode_response(&sample_response()))
+---
+{
+  "created_at": 0,
+  "error": null,
+  "id": "resp_9",
+  "incomplete_details": null,
+  "model": "gpt-5",
+  "object": "response",
+  "output": [
+    {
+      "content": [
+        {
+          "text": "raw",
+          "type": "reasoning_text"
+        }
+      ],
+      "encrypted_content": "gw1:eyJvIjoiYW50aHJvcGljIiwicyI6InNpZyJ9",
+      "id": "rs_0",
+      "status": "completed",
+      "summary": [
+        {
+          "text": "sum",
+          "type": "summary_text"
+        }
+      ],
+      "type": "reasoning"
+    },
+    {
+      "content": [
+        {
+          "annotations": [],
+          "text": "hello",
+          "type": "output_text"
+        }
+      ],
+      "id": "msg_1",
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    },
+    {
+      "arguments": "{\"a\":1}",
+      "call_id": "call_1",
+      "id": "fc_2",
+      "name": "exec",
+      "status": "completed",
+      "type": "function_call"
+    },
+    {
+      "call_id": "call_2",
+      "id": "ctc_3",
+      "input": "patch",
+      "name": "apply_patch",
+      "status": "completed",
+      "type": "custom_tool_call"
+    }
+  ],
+  "status": "completed",
+  "usage": {
+    "input_tokens": 15,
+    "input_tokens_details": {
+      "cached_tokens": 5
+    },
+    "output_tokens": 7,
+    "output_tokens_details": {
+      "reasoning_tokens": 2
+    },
+    "total_tokens": 22
+  }
+}

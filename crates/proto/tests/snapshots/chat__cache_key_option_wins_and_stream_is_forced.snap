@@ -1,0 +1,5 @@
+---
+source: crates/proto/tests/chat.rs
+expression: "String::from_utf8(encoded.body.to_vec()).expect(\"utf8\")"
+---
+{"model":"m","stream":true,"stream_options":{"include_usage":true},"prompt_cache_key":"session","messages":[]}

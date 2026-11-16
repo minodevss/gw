@@ -1,0 +1,17 @@
+---
+source: crates/proto/tests/chat.rs
+expression: messages
+---
+[
+    "n other than 1",
+    "seed",
+    "frequency_penalty",
+    "logprobs",
+    "invalid chat request: unknown field `unknown_field`, expected one of `model`, `messages`, `stream`, `stream_options`, `max_completion_tokens`, `max_tokens`, `temperature`, `top_p`, `stop`, `reasoning_effort`, `service_tier`, `response_format`, `prompt_cache_key`, `user`, `tool_choice`, `parallel_tool_calls`, `tools`, `n`, `store`, `logprobs`, `frequency_penalty`, `presence_penalty`, `seed`, `top_logprobs`, `logit_bias`, `modalities`, `audio`, `prediction`, `web_search_options`, `functions`, `function_call`, `metadata`, `safety_identifier`, `prompt_cache_retention`, `verbosity` at line 1 column 42",
+    "custom tool",
+    "tool_choice",
+    "service_tier",
+    "structured outputs",
+    "image detail",
+    "custom tool call",
+]

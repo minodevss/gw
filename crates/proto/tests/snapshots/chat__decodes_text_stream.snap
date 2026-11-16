@@ -1,0 +1,24 @@
+---
+source: crates/proto/tests/chat.rs
+expression: "decode_stream(&frames(&fixture(\"chat-text.sse\")))"
+---
+[
+    Start {
+        id: "chatcmpl-123",
+        model: "gpt-4o-mini",
+    },
+    BlockStart {
+        index: 0,
+        block: Text,
+    },
+    TextDelta {
+        index: 0,
+        text: "Hello",
+    },
+    BlockStop {
+        index: 0,
+    },
+    Stop(
+        EndTurn,
+    ),
+]

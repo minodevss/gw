@@ -1,0 +1,45 @@
+---
+source: crates/proto/tests/passthrough.rs
+expression: whole
+---
+{
+  "error": {
+    "response": {
+      "access_programs": null,
+      "completed_at": null,
+      "created_at": 1740855869,
+      "error": {
+        "code": "server_error",
+        "message": "The model failed to generate a response."
+      },
+      "id": "resp_123",
+      "incomplete_details": null,
+      "instructions": null,
+      "max_output_tokens": null,
+      "metadata": {},
+      "model": "gpt-6-astra",
+      "object": "response",
+      "output": [],
+      "parallel_tool_calls": true,
+      "previous_response_id": null,
+      "reasoning_effort": null,
+      "status": "failed",
+      "store": false,
+      "temperature": 1,
+      "text": {
+        "format": {
+          "type": "text"
+        }
+      },
+      "tool_choice": "auto",
+      "tools": [],
+      "top_p": 1,
+      "truncation": "disabled",
+      "usage": null,
+      "user": null
+    },
+    "sequence_number": 1,
+    "type": "response.failed"
+  },
+  "usage": null
+}

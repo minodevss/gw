@@ -1,0 +1,17 @@
+---
+source: crates/proto/tests/passthrough.rs
+expression: peek_view(&peeked)
+---
+{
+  "cache_key": null,
+  "cache_ttl": null,
+  "features": [
+    "Effort(Medium)",
+    "Thinking(Adaptive)",
+    "MidConversationSystem",
+    "MaxOutputTokens"
+  ],
+  "model": "claude-opus-5-5",
+  "previous_response": false,
+  "stream": true
+}

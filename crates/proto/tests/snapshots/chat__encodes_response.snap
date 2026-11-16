@@ -1,0 +1,5 @@
+---
+source: crates/proto/tests/chat.rs
+expression: "String::from_utf8(body.to_vec()).expect(\"utf8\")"
+---
+{"id":"chatcmpl-1","object":"chat.completion","created":0,"model":"kimi-k2","choices":[{"index":0,"message":{"role":"assistant","content":"Checking.","reasoning_content":"Need the weather.","tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":100,"completion_tokens":30,"total_tokens":130,"prompt_tokens_details":{"cached_tokens":80},"completion_tokens_details":{"reasoning_tokens":12}}}
