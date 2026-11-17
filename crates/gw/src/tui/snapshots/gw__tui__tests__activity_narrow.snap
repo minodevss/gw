@@ -1,0 +1,28 @@
+---
+source: crates/gw/src/tui/tests.rs
+expression: "accounts_view(healthy_accounts()).view(View::Activity).size(80, 24).render()"
+---
+ gw    Accounts   Activity   Models   Keys             running  100.64.0.2:8787
+
+ Last hour   182 requests   3 limits   1 error                        following
+
+   13:55:00  macbook  claude-opus…  claude-…  200   12.4k in     812 out    4.1s
+   13:58:30  macbook  claude-opus…  claude-…  200   12.4k in     812 out    4.1s
+   13:58:50  macbook  claude-opus…  claude-…  limit
+   13:59:10  desktop  gpt-6.1-sol   chatgpt…  502  upstream connection reset
+   13:59:40  macbook  claude-opus…  claude-…  200   12.4k in     812 out    4.1s
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+ 13:59  Served by claude-max-1, which already has this session.
+ session 3f2a91c0   client macbook   messages
+
+ ↑↓ select   enter actions   end follow   / filter   ? help

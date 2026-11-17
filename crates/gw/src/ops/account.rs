@@ -5,7 +5,7 @@ use anyhow::{Context as _, bail};
 use super::{name, with_store};
 use crate::account::{Account, Secret, State};
 use crate::clock;
-use crate::provider::{Kind, LoginSession, Method, Provider, start_login};
+use crate::provider::{Kind, LoginSession, Method, Provider, query_usage, start_login};
 use crate::select;
 use crate::store::{LogRow, Store};
 
@@ -142,6 +142,20 @@ pub(crate) async fn rename(home: &Path, old: &str, new: &str) -> anyhow::Result<
         bail!("no account named {old}");
     }
     Ok(())
+}
+
+pub(crate) async fn refresh_usage(
+    home: &Path,
+    http: &reqwest::Client,
+    name: &str,
+) -> anyhow::Result<()> {
+    let account = find(home, name).await?;
+    let usage = query_usage(http, &account)
+        .await
+        .context("this account has no usage API")??;
+    let wanted = name.to_owned();
+    let now = clock::now();
+    with_store(home, move |store| store.set_usage(&wanted, &usage, now)).await
 }
 
 pub(crate) async fn remove(home: &Path, name: &str) -> anyhow::Result<()> {

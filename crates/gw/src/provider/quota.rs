@@ -3,7 +3,7 @@ use http::header::{AUTHORIZATION, HeaderValue};
 use serde::{Deserialize, Deserializer};
 
 use super::oauth;
-use super::{Method, Provider, ProviderError, Usage, Window};
+use super::{Kind, Method, Provider, ProviderError, Usage, Window};
 use crate::account::Account;
 
 const PLAN_USAGE_URL: &str = "https://api.kimi.ai/coding/v1/usages";
@@ -15,6 +15,13 @@ pub(crate) struct Balance {
     pub(crate) available: f64,
     pub(crate) voucher: f64,
     pub(crate) cash: f64,
+}
+
+pub(crate) fn can_query_usage(kind: Kind) -> bool {
+    matches!(
+        (kind.provider(), kind.method()),
+        (Provider::Moonshot, Method::Plan)
+    )
 }
 
 pub(crate) async fn query_usage(

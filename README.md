@@ -140,10 +140,10 @@ gw account add | login | list | show | rename | remove
 gw key create | list | revoke
 gw model refresh | list | show
 gw log [--follow] [--filter "account:x status:429"]
-gw tui
+gw                          # management TUI
 ```
 
-`gw tui` shows accounts with their usage windows and reset times, keys, models with per-account support, and a live request log. It runs over SSH and copies with OSC 52.
+Running `gw` with no command opens the management TUI. It shows accounts with their usage windows and reset times, keys, models with per-account support, and a live request log. It runs over SSH and copies with OSC 52.
 
 ## Data
 

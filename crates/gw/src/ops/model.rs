@@ -2,9 +2,11 @@ use std::path::Path;
 
 use super::with_store;
 use crate::account::Account;
-use crate::catalog::{Overrides, view};
+use crate::catalog::{Catalog, Overrides, view};
 use crate::clock;
 use crate::provider::{Balance, list_models, query_balance, query_usage};
+use crate::select::{self, Choice, NoCandidate, Query, Suffix};
+use proto::features::Features;
 
 #[derive(Debug)]
 pub(crate) struct Refreshed {
@@ -78,6 +80,24 @@ pub(crate) async fn views(home: &Path) -> anyhow::Result<Vec<view::ModelView>> {
     Ok(view::models(&catalog, &accounts))
 }
 
+pub(crate) fn next_in(
+    accounts: &[Account],
+    catalog: &Catalog,
+    model: &str,
+    now: i64,
+) -> Result<Choice, NoCandidate> {
+    let features = Features::default();
+    let query = Query {
+        model,
+        suffix: Suffix::Any,
+        features: &features,
+        pinned: None,
+        skip: &[],
+        now,
+    };
+    select::select(query, accounts, catalog)
+}
+
 pub(crate) async fn capabilities(
     home: &Path,
     model: &str,
@@ -89,4 +109,42 @@ pub(crate) async fn capabilities(
         .filter(|(_, id, _)| *id == wanted)
         .map(|(account, _, caps)| (account.to_owned(), caps.clone()))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::account::{Secret, State};
+    use crate::catalog::Capabilities;
+    use crate::provider::{Kind, Method, Provider};
+
+    fn account(name: &str, method: Method, created_at: i64) -> Account {
+        Account {
+            name: name.to_owned(),
+            kind: Kind::new(Provider::Anthropic, method).unwrap(),
+            secret: Secret::Key { key: String::new() },
+            state: State::Active,
+            usage: None,
+            usage_at: None,
+            created_at,
+        }
+    }
+
+    #[test]
+    fn next_prefers_subscriptions_over_api_keys() {
+        let accounts = vec![
+            account("api", Method::Key, 1),
+            account("sub", Method::Oauth, 2),
+        ];
+        let mut catalog = Catalog::default();
+        for a in &accounts {
+            catalog.insert(&a.name, "m", Capabilities::default());
+        }
+        let choice = next_in(&accounts, &catalog, "m", 0).unwrap();
+        assert_eq!(choice.account, "sub");
+        assert_eq!(
+            next_in(&accounts, &catalog, "x", 0),
+            Err(NoCandidate::UnknownModel)
+        );
+    }
 }

@@ -1,8 +1,0 @@
----
-source: crates/gw/src/tui/keys.rs
-expression: text
----
- NAME                   CREATED      LAST USED      REQUESTS 24H
-▶macbook                2027-01-14   12s ago        1,204
- desktop                2027-01-14   2d ago         0
- t3code                 2027-01-14   never          0

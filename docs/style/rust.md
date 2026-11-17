@@ -120,7 +120,7 @@ parts.retain(|part| !part.is_empty_text());
   - fixed messages, variable values as fields: `warn!(account = %name, "limit hit")`
   - `#[instrument(skip_all, fields(...))]` only; recording all arguments leaks secrets
   - never log request or response bodies, tokens or keys
-  - while `gw tui` runs, logs go to a file, not stderr
+  - while the TUI runs, logs go to `tui.log` in the data directory, not stderr
 
 ## serde and wire types
 

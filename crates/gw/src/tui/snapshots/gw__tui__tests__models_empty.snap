@@ -1,0 +1,34 @@
+---
+source: crates/gw/src/tui/tests.rs
+expression: "Harness::new(snapshot(Vec::new())).view(View::Models).render()"
+---
+ gw    Accounts   Activity   Models   Keys                                                     running  100.64.0.2:8787
+
+ No models yet.
+ Add an account to see its models. Press r to fetch the lists.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ↑↓ select   enter actions   r refresh   / filter   ? help

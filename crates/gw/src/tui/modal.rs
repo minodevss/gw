@@ -1,301 +1,257 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
+use ratatui::widgets::Paragraph;
 
-use super::keymap::{self, Screen};
-use super::widgets::{Ctx, Input, centered};
+use super::action::{Command, Effect, Reply, Tone};
+use super::data::Snapshot;
+use super::flow::add_account::AddAccount;
+use super::flow::new_key::NewKey;
+use super::format::{self, Clock};
+use super::jobs::JobDone;
+use super::keymap::{self, Context};
+use super::theme::Theme;
+use super::widget::confirm::{Choice, Confirm};
+use super::widget::dialog;
+use super::widget::menu::Menu;
+use super::widget::text_field::TextField;
+use crate::ops::name;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Action {
-    RemoveAccount(String),
-    RevokeKey(String),
-    Refresh(Vec<String>),
+pub(crate) enum Modal {
+    Menu(Menu),
+    Confirm(Confirm),
+    Help(Help),
+    Rename(Rename),
+    AddAccount(Box<AddAccount>),
+    NewKey(Box<NewKey>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Closed<T> {
-    Stay,
-    Cancel,
-    Done(T),
+#[derive(Debug, Clone)]
+pub(crate) struct Help {
+    rows: Vec<(String, &'static str)>,
 }
 
-#[derive(Debug)]
-enum Kind {
-    TypeName { expected: String, input: Input },
-    YesNo,
+impl Help {
+    pub(crate) fn new(context: Context) -> Self {
+        Self {
+            rows: keymap::help(context),
+        }
+    }
+
+    fn render(&self, frame: &mut Frame<'_>, area: Rect, theme: Theme) {
+        let keys = self
+            .rows
+            .iter()
+            .map(|(keys, _)| format::width(keys))
+            .max()
+            .unwrap_or(0);
+        let labels = self
+            .rows
+            .iter()
+            .map(|(_, label)| format::width(label))
+            .max()
+            .unwrap_or(0);
+        let width = u16::try_from(keys + labels + 8).unwrap_or(u16::MAX);
+        let height = u16::try_from(self.rows.len() + 2).unwrap_or(u16::MAX);
+        let outer = dialog::centered(area, width, height);
+        let inner = dialog::open(frame, outer, "Keys on this screen", "");
+        let lines: Vec<Line<'_>> = self
+            .rows
+            .iter()
+            .map(|(keys_text, label)| {
+                Line::from(vec![
+                    Span::styled(format::fit(keys_text, keys), theme.accent()),
+                    Span::raw(format!("  {label}")),
+                ])
+            })
+            .collect();
+        frame.render_widget(Paragraph::new(lines), inner);
+    }
 }
 
-#[derive(Debug)]
-pub(crate) struct Confirm {
-    title: String,
-    lines: Vec<String>,
-    kind: Kind,
-    action: Action,
-    mismatch: bool,
+#[derive(Debug, Clone)]
+pub(crate) struct Rename {
+    title: &'static str,
+    old: String,
+    field: TextField,
+    taken: Vec<String>,
+    make: fn(String, String) -> Effect,
 }
 
-impl Confirm {
-    pub(crate) fn type_name(
-        title: &str,
-        lines: Vec<String>,
-        expected: &str,
-        action: Action,
+impl Rename {
+    pub(crate) fn new(
+        title: &'static str,
+        old: &str,
+        taken: Vec<String>,
+        make: fn(String, String) -> Effect,
     ) -> Self {
         Self {
-            title: title.to_owned(),
-            lines,
-            kind: Kind::TypeName {
-                expected: expected.to_owned(),
-                input: Input::default(),
-            },
-            action,
-            mismatch: false,
-        }
-    }
-
-    pub(crate) fn yes_no(question: &str, action: Action) -> Self {
-        Self {
-            title: question.to_owned(),
-            lines: Vec::new(),
-            kind: Kind::YesNo,
-            action,
-            mismatch: false,
-        }
-    }
-
-    pub(crate) fn hints(&self) -> Vec<(&'static str, &'static str)> {
-        match self.kind {
-            Kind::TypeName { .. } => vec![("enter", "confirm"), ("esc", "cancel")],
-            Kind::YesNo => vec![("y", "yes"), ("n/esc", "no")],
-        }
-    }
-
-    pub(crate) fn handle(&mut self, key: &KeyEvent) -> Closed<Action> {
-        if key.code == KeyCode::Esc {
-            return Closed::Cancel;
-        }
-        match &mut self.kind {
-            Kind::YesNo => {
-                if matches!(key.code, KeyCode::Char('y' | 'Y') | KeyCode::Enter) {
-                    Closed::Done(self.action.clone())
-                } else if matches!(key.code, KeyCode::Char('n' | 'N')) {
-                    Closed::Cancel
-                } else {
-                    Closed::Stay
-                }
-            }
-            Kind::TypeName { expected, input } => {
-                if key.code == KeyCode::Enter {
-                    if input.text() == expected {
-                        return Closed::Done(self.action.clone());
-                    }
-                    self.mismatch = true;
-                } else if input.handle(key) {
-                    self.mismatch = false;
-                }
-                Closed::Stay
-            }
-        }
-    }
-
-    pub(crate) fn paste(&mut self, pasted: &str) {
-        if let Kind::TypeName { input, .. } = &mut self.kind {
-            input.paste(pasted);
-        }
-    }
-
-    pub(crate) fn render(&self, frame: &mut Frame<'_>, area: Rect, ctx: &Ctx) {
-        let mut lines: Vec<Line<'static>> = self.lines.iter().cloned().map(Line::from).collect();
-        match &self.kind {
-            Kind::TypeName { expected, input } => {
-                lines.push(Line::default());
-                lines.push(Line::from(format!("type {expected} to confirm")));
-                lines.push(input.line(50, true, ctx.theme));
-                if self.mismatch {
-                    lines.push(Line::styled("name does not match", ctx.theme.bad()));
-                }
-            }
-            Kind::YesNo => lines.push(Line::styled("y yes · n no", ctx.theme.dim())),
-        }
-        let height = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX);
-        let rect = centered(area, 64, height);
-        frame.render_widget(Clear, rect);
-        frame.render_widget(
-            Paragraph::new(lines)
-                .wrap(Wrap { trim: false })
-                .block(Block::bordered().title(format!(" {} ", self.title))),
-            rect,
-        );
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct TextView {
-    title: String,
-    lines: Vec<Line<'static>>,
-    scroll: u16,
-}
-
-impl TextView {
-    pub(crate) fn new(title: String, lines: Vec<Line<'static>>) -> Self {
-        Self {
             title,
-            lines,
-            scroll: 0,
+            old: old.to_owned(),
+            field: TextField::new().with_value(old),
+            taken: taken.into_iter().filter(|name| name != old).collect(),
+            make,
         }
     }
 
-    pub(crate) fn handle(&mut self, key: &KeyEvent) -> Closed<()> {
-        let code = key.code;
-        if matches!(code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
-            Closed::Cancel
-        } else if matches!(code, KeyCode::Char('j') | KeyCode::Down) {
-            let last = u16::try_from(self.lines.len().saturating_sub(1)).unwrap_or(u16::MAX);
-            self.scroll = (self.scroll + 1).min(last);
-            Closed::Stay
-        } else if matches!(code, KeyCode::Char('k') | KeyCode::Up) {
-            self.scroll = self.scroll.saturating_sub(1);
-            Closed::Stay
-        } else {
-            Closed::Stay
+    fn submit(&mut self) -> Reply {
+        let new = self.field.value().trim().to_owned();
+        if new == self.old {
+            return Reply::Close;
+        }
+        match name::check(&new, &self.taken) {
+            Ok(()) => Reply::CloseDo((self.make)(self.old.clone(), new)),
+            Err(error) => {
+                self.field.set_error(format::capitalize(&error.to_string()));
+                Reply::None
+            }
         }
     }
 
-    pub(crate) fn render(&self, frame: &mut Frame<'_>, area: Rect) {
-        let rect = centered(
-            area,
-            area.width.saturating_sub(4),
-            area.height.saturating_sub(2),
-        );
-        frame.render_widget(Clear, rect);
+    fn render(&self, frame: &mut Frame<'_>, area: Rect, theme: Theme) {
+        let outer = dialog::centered(area, 52, 7);
+        let inner = dialog::open(frame, outer, self.title, &self.old);
         frame.render_widget(
-            Paragraph::new(self.lines.clone())
-                .scroll((self.scroll, 0))
-                .wrap(Wrap { trim: false })
-                .block(Block::bordered().title(format!(" {} ", self.title))),
-            rect,
+            Paragraph::new(Line::styled("New name", Theme::dim())),
+            Rect { height: 1, ..inner },
         );
+        let field = Rect {
+            y: inner.y + 1,
+            height: 2,
+            ..inner
+        };
+        self.field.render(frame, field, theme, true);
     }
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct NewKey {
-    input: Input,
-}
-
-impl NewKey {
-    pub(crate) fn handle(&mut self, key: &KeyEvent) -> Closed<String> {
-        if key.code == KeyCode::Esc {
-            return Closed::Cancel;
+impl Modal {
+    pub(crate) fn context(&self) -> Context {
+        match self {
+            Self::Menu(_) => Context::Menu,
+            Self::Confirm(_) => Context::Confirm,
+            Self::Help(_) => Context::Help,
+            Self::Rename(_) => Context::Done,
+            Self::AddAccount(wizard) => wizard.context(),
+            Self::NewKey(flow) => flow.context(),
         }
-        if key.code == KeyCode::Enter {
-            let name = self.input.text().trim().to_owned();
-            return if name.is_empty() {
-                Closed::Stay
-            } else {
-                Closed::Done(name)
+    }
+
+    pub(crate) fn field_mut(&mut self) -> Option<&mut TextField> {
+        match self {
+            Self::Rename(rename) => Some(&mut rename.field),
+            Self::AddAccount(wizard) => wizard.field_mut(),
+            Self::NewKey(flow) => flow.field_mut(),
+            Self::Menu(_) | Self::Confirm(_) | Self::Help(_) => None,
+        }
+    }
+
+    pub(crate) fn opened(&mut self) -> Option<Effect> {
+        match self {
+            Self::AddAccount(wizard) => wizard.opened(),
+            Self::Menu(_)
+            | Self::Confirm(_)
+            | Self::Help(_)
+            | Self::Rename(_)
+            | Self::NewKey(_) => None,
+        }
+    }
+
+    pub(crate) fn shortcut(&self, key: &KeyEvent) -> Option<Reply> {
+        let Self::Menu(menu) = self else {
+            return None;
+        };
+        let KeyCode::Char(c) = key.code else {
+            return None;
+        };
+        if key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        {
+            return None;
+        }
+        menu.by_shortcut(c).map(|item| match &item.unavailable {
+            Some(why) => Reply::Toast(Tone::Error, format!("{}: {why}", item.label)),
+            None => Reply::Command(item.command),
+        })
+    }
+
+    pub(crate) fn command(&mut self, command: Command, snapshot: &Snapshot) -> Reply {
+        match self {
+            Self::Menu(menu) => Self::menu_command(menu, command),
+            Self::Confirm(confirm) => Self::confirm_command(confirm, command),
+            Self::Help(_) => {
+                if matches!(command, Command::Back | Command::Select) {
+                    Reply::Close
+                } else {
+                    Reply::None
+                }
+            }
+            Self::Rename(rename) => {
+                if command == Command::Select {
+                    rename.submit()
+                } else if command == Command::Back {
+                    Reply::Close
+                } else {
+                    Reply::None
+                }
+            }
+            Self::AddAccount(wizard) => wizard.command(command, snapshot),
+            Self::NewKey(flow) => flow.command(command, snapshot),
+        }
+    }
+
+    fn menu_command(menu: &mut Menu, command: Command) -> Reply {
+        if command == Command::Up {
+            menu.step(-1);
+        } else if command == Command::Down {
+            menu.step(1);
+        } else if command == Command::Back {
+            return Reply::Close;
+        } else if command == Command::Select {
+            return match menu.current() {
+                Some(item) => match &item.unavailable {
+                    Some(why) => Reply::Toast(Tone::Error, format!("{}: {why}", item.label)),
+                    None => Reply::Command(item.command),
+                },
+                None => Reply::Close,
             };
         }
-        self.input.handle(key);
-        Closed::Stay
+        Reply::None
     }
 
-    pub(crate) fn paste(&mut self, pasted: &str) {
-        self.input.paste(pasted);
+    fn confirm_command(confirm: &mut Confirm, command: Command) -> Reply {
+        if command == Command::Left {
+            confirm.pick(Choice::Cancel);
+        } else if command == Command::Right {
+            confirm.pick(Choice::Confirm);
+        } else if command == Command::Back {
+            return Reply::Close;
+        } else if command == Command::Select {
+            return match confirm.choice() {
+                Choice::Confirm => Reply::CloseDo(confirm.effect.clone()),
+                Choice::Cancel => Reply::Close,
+            };
+        }
+        Reply::None
     }
 
-    pub(crate) fn render(&self, frame: &mut Frame<'_>, area: Rect, ctx: &Ctx) {
-        let rect = centered(area, 56, 5);
-        frame.render_widget(Clear, rect);
-        frame.render_widget(
-            Paragraph::new(vec![
-                Line::from("name for the new key"),
-                self.input.line(50, true, ctx.theme),
-                Line::styled("enter create · esc cancel", ctx.theme.dim()),
-            ])
-            .block(Block::bordered().title(" Create key ")),
-            rect,
-        );
-    }
-}
-
-pub(crate) fn render_help(frame: &mut Frame<'_>, area: Rect, screen: Screen, ctx: &Ctx) {
-    let lines: Vec<Line<'static>> = keymap::help(screen)
-        .into_iter()
-        .map(|(keys, label)| {
-            Line::from(vec![
-                Span::styled(
-                    format!("{keys:<12}"),
-                    ctx.theme.accent().add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(label),
-            ])
-        })
-        .collect();
-    let height = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX);
-    let rect = centered(area, 56, height);
-    frame.render_widget(Clear, rect);
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(Block::bordered().title(format!(" Help · {} ", screen.title()))),
-        rect,
-    );
-}
-
-#[cfg(test)]
-mod tests {
-    use crossterm::event::KeyModifiers;
-
-    use super::*;
-
-    fn press(code: KeyCode) -> KeyEvent {
-        KeyEvent::new(code, KeyModifiers::NONE)
+    pub(crate) fn job(&mut self, done: JobDone) -> Result<Reply, JobDone> {
+        match self {
+            Self::AddAccount(wizard) => wizard.job(done),
+            Self::NewKey(flow) => flow.job(done),
+            Self::Menu(_) | Self::Confirm(_) | Self::Help(_) | Self::Rename(_) => Err(done),
+        }
     }
 
-    #[test]
-    fn removal_needs_the_exact_name() {
-        let mut confirm = Confirm::type_name(
-            "Remove",
-            Vec::new(),
-            "ab",
-            Action::RemoveAccount("ab".to_owned()),
-        );
-        confirm.handle(&press(KeyCode::Char('a')));
-        assert_eq!(confirm.handle(&press(KeyCode::Enter)), Closed::Stay);
-        confirm.handle(&press(KeyCode::Char('b')));
-        assert_eq!(
-            confirm.handle(&press(KeyCode::Enter)),
-            Closed::Done(Action::RemoveAccount("ab".to_owned()))
-        );
-    }
-
-    #[test]
-    fn escape_cancels_a_confirmation() {
-        let mut confirm = Confirm::yes_no("refresh 2 accounts?", Action::Refresh(Vec::new()));
-        assert_eq!(confirm.handle(&press(KeyCode::Esc)), Closed::Cancel);
-    }
-
-    #[test]
-    fn yes_confirms_a_refresh() {
-        let mut confirm =
-            Confirm::yes_no("refresh 2 accounts?", Action::Refresh(vec!["a".to_owned()]));
-        assert_eq!(
-            confirm.handle(&press(KeyCode::Char('y'))),
-            Closed::Done(Action::Refresh(vec!["a".to_owned()]))
-        );
-    }
-
-    #[test]
-    fn empty_key_name_is_not_submitted() {
-        let mut modal = NewKey::default();
-        assert_eq!(modal.handle(&press(KeyCode::Enter)), Closed::Stay);
-        modal.handle(&press(KeyCode::Char('m')));
-        assert_eq!(
-            modal.handle(&press(KeyCode::Enter)),
-            Closed::Done("m".to_owned())
-        );
+    pub(crate) fn render(&self, frame: &mut Frame<'_>, area: Rect, theme: Theme, clock: &Clock) {
+        match self {
+            Self::Menu(menu) => menu.render(frame, area),
+            Self::Confirm(confirm) => confirm.render(frame, area, theme),
+            Self::Help(help) => help.render(frame, area, theme),
+            Self::Rename(rename) => rename.render(frame, area, theme),
+            Self::AddAccount(wizard) => wizard.render(frame, area, theme, clock),
+            Self::NewKey(flow) => flow.render(frame, area, theme),
+        }
     }
 }

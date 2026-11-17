@@ -14,17 +14,23 @@ mod session;
 mod store;
 mod tui;
 
+use std::io::IsTerminal as _;
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::error::ErrorKind;
+use clap::{CommandFactory as _, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "gw", version, about = "personal LLM gateway")]
+#[command(
+    name = "gw",
+    version,
+    about = "Personal LLM gateway. Run without a command to open the management TUI."
+)]
 struct Cli {
     #[arg(long, global = true, env = "GW_HOME")]
     home: Option<PathBuf>,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -47,23 +53,39 @@ enum Command {
         #[arg(long)]
         filter: Option<String>,
     },
-    #[command(about = "open the management TUI")]
-    Tui,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+    let home = home::resolve(cli.home);
+    let Some(command) = cli.command else {
+        if !(std::io::stdin().is_terminal() && std::io::stdout().is_terminal()) {
+            Cli::command()
+                .error(
+                    ErrorKind::MissingSubcommand,
+                    "no command given and not running in a terminal",
+                )
+                .exit();
+        }
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(home::database(&home)?.with_file_name("tui.log"))?;
+        tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(std::sync::Mutex::new(log))
+            .init();
+        return tui::run(&home).await;
+    };
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
-    let cli = Cli::parse();
-    let home = home::resolve(cli.home);
-    match cli.command {
+    match command {
         Command::Serve { listen } => serve::run(&home, &listen).await,
         Command::Account(command) => cli::account(&home, command).await,
         Command::Key(command) => cli::key(&home, command).await,
         Command::Model(command) => cli::model(&home, command).await,
         Command::Log { follow, filter } => cli::log(&home, follow, filter.as_deref()).await,
-        Command::Tui => tui::run(&home).await,
     }
 }

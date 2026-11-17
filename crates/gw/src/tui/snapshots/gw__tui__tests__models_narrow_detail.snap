@@ -1,0 +1,28 @@
+---
+source: crates/gw/src/tui/tests.rs
+expression: harness.render()
+---
+ gw    Accounts   Activity   Models   Keys             running  100.64.0.2:8787
+
+ claude-opus-5-5
+
+ Next request
+  claude-max-1  (subscription, resets soonest)
+
+ Names
+  claude-opus-5-5      any account
+  claude-opus-5-5:sub  subscriptions only
+  claude-opus-5-5:api  API keys only
+
+ Accounts
+  claude-max-1   ready
+  claude-max-2   limited, 41m
+  anthropic-api  ready
+
+ Limits
+  anthropic-api does not support: fast mode
+
+
+
+
+ ← back   enter actions   ? help
