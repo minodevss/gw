@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::body::{Body, Bytes};
-use axum::extract::State as AxumState;
+use axum::extract::{Path as AxumPath, State as AxumState};
 use axum::http::{HeaderMap, HeaderValue, Response, StatusCode, header};
 use axum::routing::{get, post};
 use proto::Api;
@@ -178,6 +178,7 @@ pub(crate) async fn run(home: &Path, listen: &str) -> anyhow::Result<()> {
         .route("/v1/responses", post(responses))
         .route("/v1/chat/completions", post(chat))
         .route("/v1/models", get(models))
+        .route("/v1/models/{id}", get(model))
         .route("/codex/models", get(codex_models))
         .with_state(app);
     let listener = tokio::net::TcpListener::bind(listen).await?;
@@ -270,27 +271,54 @@ async fn chat(AxumState(app): AxumState<App>, headers: HeaderMap, body: Bytes) -
 }
 
 async fn models(AxumState(app): AxumState<App>, headers: HeaderMap) -> Response<Body> {
-    let api = if headers.contains_key("anthropic-version") {
-        Api::Messages
-    } else {
-        Api::Chat
-    };
-    catalog_response(&app, &headers, api, |views| match api {
-        Api::Messages => view::anthropic(views),
-        Api::Responses | Api::Chat => view::openai(views),
+    let api = models_api(&headers);
+    catalog_response(&app, &headers, api, |views| {
+        Ok(match api {
+            Api::Messages => view::anthropic(views),
+            Api::Responses | Api::Chat => view::openai(views),
+        })
     })
     .await
 }
 
+async fn model(
+    AxumState(app): AxumState<App>,
+    AxumPath(id): AxumPath<String>,
+    headers: HeaderMap,
+) -> Response<Body> {
+    let api = models_api(&headers);
+    catalog_response(&app, &headers, api, |views| {
+        let found = views.iter().find(|m| m.id == id).ok_or_else(|| {
+            ErrorBody::new(404, ErrorKind::NotFound, format!("model not found: {id}"))
+        })?;
+        Ok(match api {
+            Api::Messages => view::anthropic_model(found),
+            Api::Responses | Api::Chat => view::openai_model(found),
+        })
+    })
+    .await
+}
+
+fn models_api(headers: &HeaderMap) -> Api {
+    if headers.contains_key("anthropic-version") {
+        Api::Messages
+    } else {
+        Api::Chat
+    }
+}
+
 async fn codex_models(AxumState(app): AxumState<App>, headers: HeaderMap) -> Response<Body> {
-    catalog_response(&app, &headers, Api::Responses, view::codex).await
+    catalog_response(&app, &headers, Api::Responses, |views| {
+        Ok(view::codex(views))
+    })
+    .await
 }
 
 async fn catalog_response(
     app: &App,
     headers: &HeaderMap,
     api: Api,
-    render: impl FnOnce(&[view::ModelView]) -> serde_json::Value,
+    render: impl FnOnce(&[view::ModelView]) -> Result<serde_json::Value, ErrorBody>,
 ) -> Response<Body> {
     let trace = blank_trace();
     if authenticate(app, headers).await.is_none() {
@@ -301,7 +329,10 @@ async fn catalog_response(
         .await
     {
         Ok((accounts, catalog)) => {
-            let body = render(&view::models(&catalog, &accounts)).to_string();
+            let body = match render(&view::models(&catalog, &accounts)) {
+                Ok(body) => body.to_string(),
+                Err(error) => return error_response(api, &error, &trace),
+            };
             Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, "application/json")

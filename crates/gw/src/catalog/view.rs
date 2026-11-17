@@ -109,39 +109,52 @@ pub(crate) fn codex(models: &[ModelView]) -> Value {
 }
 
 pub(crate) fn anthropic(models: &[ModelView]) -> Value {
-    let data: Vec<Value> = models
-        .iter()
-        .map(|m| json!({ "type": "model", "id": m.id, "display_name": m.id, "created_at": "1970-01-01T00:00:00Z" }))
-        .collect();
     json!({
-        "data": data,
+        "data": models.iter().map(anthropic_model).collect::<Vec<_>>(),
         "has_more": false,
         "first_id": models.first().map(|m| m.id.as_str()),
         "last_id": models.last().map(|m| m.id.as_str()),
     })
 }
 
+// The model object of GET /v1/models/{model_id}. `capabilities` must list every known capability
+// when present, which gw cannot know for every upstream, so it stays null.
+// https://platform.claude.com/docs/en/api/models/retrieve
+pub(crate) fn anthropic_model(m: &ModelView) -> Value {
+    json!({
+        "type": "model",
+        "id": m.id,
+        "display_name": m.id,
+        "created_at": "1970-01-01T00:00:00Z",
+        "max_input_tokens": m.context,
+        "max_tokens": m.max_output,
+        "capabilities": null,
+        "lifecycle": "active",
+        "line": null,
+        "deprecated_at": null,
+        "retires_at": null,
+    })
+}
+
 pub(crate) fn openai(models: &[ModelView]) -> Value {
-    let data: Vec<Value> = models
-        .iter()
-        .map(|m| {
-            let mut modalities = vec!["text"];
-            if m.image {
-                modalities.push("image");
-            }
-            json!({
-                "id": m.id,
-                "object": "model",
-                "created": 0,
-                "owned_by": "gw",
-                "context_length": m.context,
-                "max_output_tokens": m.max_output,
-                "supported_reasoning_levels": m.efforts,
-                "input_modalities": modalities,
-            })
-        })
-        .collect();
-    json!({ "object": "list", "data": data })
+    json!({ "object": "list", "data": models.iter().map(openai_model).collect::<Vec<_>>() })
+}
+
+pub(crate) fn openai_model(m: &ModelView) -> Value {
+    let mut modalities = vec!["text"];
+    if m.image {
+        modalities.push("image");
+    }
+    json!({
+        "id": m.id,
+        "object": "model",
+        "created": 0,
+        "owned_by": "gw",
+        "context_length": m.context,
+        "max_output_tokens": m.max_output,
+        "supported_reasoning_levels": m.efforts,
+        "input_modalities": modalities,
+    })
 }
 
 #[cfg(test)]
@@ -184,6 +197,20 @@ mod tests {
         assert_eq!(gpt.context, None);
         assert_eq!(gpt.efforts, None);
         assert!(gpt.responses_everywhere);
+    }
+
+    #[test]
+    fn anthropic_model_reports_known_limits_and_no_guessed_capabilities() {
+        let model = ModelView {
+            id: "m".to_owned(),
+            context: Some(200_000),
+            max_output: Some(32_000),
+            ..ModelView::default()
+        };
+        let value = anthropic_model(&model);
+        assert_eq!(value["max_input_tokens"], 200_000);
+        assert_eq!(value["max_tokens"], 32_000);
+        assert!(value["capabilities"].is_null());
     }
 
     #[test]
