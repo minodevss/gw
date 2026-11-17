@@ -213,14 +213,23 @@ fn window_label(window: &Duration) -> Option<String> {
         reason = "window durations are small positive numbers"
     )]
     let count = duration as i64;
-    let minutes = if unit.contains("MINUTE") {
+    let minutes = if unit.contains("SECOND") {
+        if count % 60 != 0 {
+            return Some(format!("{count}s"));
+        }
+        count / 60
+    } else if unit.contains("MINUTE") {
         count
     } else if unit.contains("HOUR") {
         count.saturating_mul(60)
     } else if unit.contains("DAY") {
         count.saturating_mul(1440)
+    } else if unit.contains("WEEK") {
+        count.saturating_mul(7 * 1440)
+    } else if unit.contains("MONTH") {
+        return Some(format!("{count}mo"));
     } else {
-        return Some(format!("{count}s"));
+        return None;
     };
     Some(match minutes {
         m if m % 1440 == 0 => format!("{}d", m / 1440),
@@ -371,6 +380,9 @@ mod tests {
         assert_eq!(label(2.0, "TIME_UNIT_HOUR").as_deref(), Some("2h"));
         assert_eq!(label(7.0, "TIME_UNIT_DAY").as_deref(), Some("7d"));
         assert_eq!(label(30.0, "TIME_UNIT_SECOND").as_deref(), Some("30s"));
+        assert_eq!(label(1.0, "TIME_UNIT_WEEK").as_deref(), Some("7d"));
+        assert_eq!(label(1.0, "TIME_UNIT_MONTH").as_deref(), Some("1mo"));
+        assert_eq!(label(1.0, "TIME_UNIT_FORTNIGHT"), None);
     }
 
     #[test]
