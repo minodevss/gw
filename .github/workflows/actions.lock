@@ -5,11 +5,12 @@ version: 'v0.0.3'
 workflows:
     '.github/workflows/ci.yml':
         - 'actions/checkout@v7.0.1'
-        - 'docker/build-push-action@v7.4.0'
-        - 'docker/setup-buildx-action@v4.4.1'
         - 'swatinem/rust-cache@v2.9.3'
         - 'taiki-e/install-action@v2.90.5'
         - 'zizmorcore/zizmor-action@v0.8.1'
+    '.github/workflows/docker.yml':
+        - 'docker/build-push-action@v7.4.0'
+        - 'docker/setup-buildx-action@v4.4.1'
     '.github/workflows/release.yml':
         - 'actions/attest@v4.2.2'
         - 'actions/checkout@v7.0.1'

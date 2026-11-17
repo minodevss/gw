@@ -46,18 +46,6 @@ jobs:
           tool: cargo-deny
       - run: cargo deny check
 
-  docker:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: docker/setup-buildx-action@v4.4.1
-      - uses: docker/build-push-action@v7.4.0
-        with:
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   actions:
     runs-on: ubuntu-slim
     permissions:
