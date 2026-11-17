@@ -1,0 +1,34 @@
+---
+source: crates/gw/src/tui/tests.rs
+expression: harness.render()
+---
+ gw    Accounts   Activity   Models   Keys                                                     running  100.64.0.2:8787
+
+ Anthropic                                           claude-max-1
+   claude-max-1   ━━━━━━━───   72%  1h 12m           Claude subscription
+   claude-max-2   ━─────────   10%  2h 30m
+   anthropic-api  pay as you go                      Usage
+                                                      5 hours  ━━━━━━━───   72%   resets 15:12
+ OpenAI                                               7 days   ━━━───────   31%   resets Wed 14:00
+   chatgpt-pro-1  ━━───┌ Add account ──────────────────────────────────────────────────── 2 / 3 ┐
+                       │                                                                        │
+ Custom                │ Endpoint                                                               │
+   ollama         ready│                                                                        │
+                       │ Address                                                                │
+                       │ http://localhost:11434                                                 │
+                       │ Enter a full http:// or https:// address                               │
+                       │ API it speaks                                                          │
+                       │ chat, responses or messages                                            │
+                       │                                                                        │
+                       │                                                                        │
+                       │                                                                        │
+                       └────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+ enter next   esc back

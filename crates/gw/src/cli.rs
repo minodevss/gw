@@ -30,6 +30,8 @@ pub(crate) enum AccountCommand {
     List,
     #[command(about = "show one account with recent sessions and errors")]
     Show { name: String },
+    #[command(about = "rename an account; past log rows keep the old name")]
+    Rename { old: String, new: String },
     #[command(about = "remove an account")]
     Remove {
         name: String,
@@ -106,7 +108,7 @@ pub(crate) async fn account(home: &Path, command: AccountCommand) -> anyhow::Res
             let detail = ops::account::detail(home, &name).await?;
             out(&account_line(&account, clock::now()));
             out(&format!(
-                "models {} · requests 24h {} · 5h tokens {} in ({} cache) / {} out",
+                "models {}   requests 24h {}   5h tokens {} in ({} cached) {} out",
                 detail.models,
                 detail.requests_24h,
                 detail.input_5h,
@@ -122,6 +124,11 @@ pub(crate) async fn account(home: &Path, command: AccountCommand) -> anyhow::Res
             for (ts, error) in detail.errors {
                 out(&format!("error {} {error}", clock::format_utc(ts)));
             }
+            Ok(())
+        }
+        AccountCommand::Rename { old, new } => {
+            ops::account::rename(home, &old, &new).await?;
+            out(&format!("{old}: renamed to {new}"));
             Ok(())
         }
         AccountCommand::Remove { name, yes } => {
@@ -216,6 +223,9 @@ async fn obtain_secret(home: &Path, kind: Kind) -> anyhow::Result<Secret> {
         return Ok(ops::account::pasted_secret(kind, value, clock::now()));
     }
     let session = ops::account::begin_login(home, &http()?, kind).await?;
+    if crate::browser::open(session.prompt().url()).await {
+        out("opened the sign-in page in your browser");
+    }
     let pasted = match session.prompt() {
         Prompt::PasteCode { url } => {
             out(&format!("open: {url}"));
@@ -391,7 +401,7 @@ pub(crate) async fn model(home: &Path, command: ModelCommand) -> anyhow::Result<
 fn describe_caps(caps: &Capabilities) -> String {
     let known = |value: Option<String>| value.unwrap_or_else(|| "?".to_owned());
     format!(
-        "context {} · max_output {} · efforts {} · fast {} · image {} · unsupported [{}]",
+        "context {}   max_output {}   efforts {}   fast {}   image {}   unsupported [{}]",
         known(caps.context.map(|v| v.to_string())),
         known(caps.max_output.map(|v| v.to_string())),
         known(caps.efforts.as_ref().map(|v| v.join(","))),
@@ -411,7 +421,7 @@ pub(crate) async fn log(home: &Path, follow: bool, filter: Option<&str>) -> anyh
             last = last.max(row.id);
             if filter.matches(row) {
                 out(&format!(
-                    "{} {:<10} {:<8} {:<10} {:<28} {:<22} {:<10} {} in {} (cache {}) out {} {}ms {} {}",
+                    "{} {:<10} {:<8} {:<10} {:<28} {:<22} {:<10} {} in {} (cached {}, written {}) out {} {}ms {} {}",
                     clock::format_utc(row.ts),
                     row.key.as_deref().unwrap_or("-"),
                     row.session
@@ -422,8 +432,11 @@ pub(crate) async fn log(home: &Path, follow: bool, filter: Option<&str>) -> anyh
                     row.account.as_deref().unwrap_or("-"),
                     row.reason,
                     row.status,
-                    row.input.unwrap_or_default() + row.cache_read.unwrap_or_default(),
+                    row.input.unwrap_or_default()
+                        + row.cache_read.unwrap_or_default()
+                        + row.cache_write.unwrap_or_default(),
                     row.cache_read.unwrap_or_default(),
+                    row.cache_write.unwrap_or_default(),
                     row.output.unwrap_or_default(),
                     row.duration_ms,
                     row.error.as_deref().unwrap_or_default(),

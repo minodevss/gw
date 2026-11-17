@@ -1,198 +1,128 @@
-mod accounts;
+mod action;
 mod data;
+mod flow;
+mod format;
+mod jobs;
 mod keymap;
-mod keys;
-mod log;
 mod modal;
-mod models;
-mod widgets;
-mod wizard;
+mod theme;
+mod view;
+mod widget;
 
-use std::io::{IsTerminal as _, Write as _};
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+mod tests;
+
+use std::io::Write as _;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context as _, bail};
+use anyhow::Context as _;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use crossterm::event::{
     DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode, KeyEvent,
-    KeyEventKind,
+    KeyEventKind, KeyModifiers,
 };
+use crossterm::execute;
 use futures_util::StreamExt as _;
+use jiff::tz::TimeZone;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::{DefaultTerminal, Frame};
+use ratatui::widgets::{Paragraph, Wrap};
 use tokio::sync::mpsc;
-use tokio::task::JoinSet;
 
-use self::accounts::AccountsView;
-use self::data::{LoadRequest, Snapshot};
-use self::keymap::{Command, Screen};
-use self::keys::{KeysView, SnippetTabs};
-use self::log::LogView;
-use self::modal::{Action, Closed, Confirm, NewKey, TextView};
-use self::models::ModelsView;
-use self::widgets::{Ctx, Theme, truncate};
-use self::wizard::Wizard;
-use crate::account::Account;
+use self::action::{Action, Command, Reply, Tone, update};
+use self::data::{Server, Snapshot};
+use self::format::{Clock, truncate};
+use self::jobs::Jobs;
+use self::keymap::Context;
+use self::modal::Modal;
+use self::theme::Theme;
+use self::view::{Env, Filter, View, accounts, activity, keys, models};
+use self::widget::tabs;
 use crate::clock;
-use crate::ops;
 
+const TINT: f32 = 0.08;
 const TICK: Duration = Duration::from_millis(250);
-const RELOAD: Duration = Duration::from_secs(1);
-const HEARTBEAT_FRESH_SECS: i64 = 10;
-const MIN_WIDTH: u16 = 80;
-const MIN_HEIGHT: u16 = 24;
+const INFO_LIFETIME: Duration = Duration::from_secs(4);
+const WIDE_COLUMNS: u16 = 110;
+const MIN_COLUMNS: u16 = 60;
+const MIN_ROWS: u16 = 16;
+const COPY_PREVIEW_CELLS: usize = 48;
+const CHANNEL_DEPTH: usize = 64;
 
-pub(crate) enum Request {
-    Lines {
-        title: String,
-        lines: Vec<Line<'static>>,
-    },
-    AddAccount,
-    Relogin(Account),
-    RemoveAccount(String),
-    RefreshAccount(String),
-    NewKey,
-    KeySnippets(String),
-    RevokeKey {
-        name: String,
-        last_used: String,
-    },
-    RefreshAll,
-    Copy(String),
-    Error(String),
-}
-
-pub(crate) enum Msg {
-    Loaded(Box<anyhow::Result<Snapshot>>),
-    Wizard(Box<wizard::Event>),
-    KeyIssued {
-        name: String,
-        result: Result<ops::key::Issued, String>,
-    },
-    Finished(Result<String, String>),
-    RefreshStep {
-        account: String,
-        result: Result<usize, String>,
-    },
-    RefreshDone,
-}
-
-enum Overlay {
-    Help,
-    Lines(TextView),
-    Confirm(Confirm),
-    NewKey(NewKey),
-    Snippets(SnippetTabs),
-    Wizard(Box<Wizard>),
-}
-
-enum Reaction {
-    Keep,
-    Close,
-    Run(Action),
-    CreateKey(String),
-    Copy(String),
-    Wizard(wizard::Output),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Tone {
-    Info,
-    Ok,
-    Error,
-}
-
-#[derive(Debug, Clone)]
 struct Status {
     text: String,
     tone: Tone,
+    since: Instant,
 }
 
-#[derive(Debug)]
-struct Refresh {
-    total: usize,
-    done: usize,
-    failures: Vec<String>,
-}
-
-#[derive(Debug, Default)]
-struct Header {
-    limited: usize,
-    inactive: usize,
-    heartbeat: Option<(i64, String)>,
-}
-
-fn server_text(heartbeat: Option<&(i64, String)>, now: i64) -> String {
-    match heartbeat {
-        Some((at, listen)) if now - at <= HEARTBEAT_FRESH_SECS => {
-            format!("server: running {listen}")
-        }
-        Some(_) | None => "server: not running".to_owned(),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Flow {
-    Run,
-    Quit,
-}
-
-struct App {
-    home: PathBuf,
-    http: reqwest::Client,
-    tx: mpsc::Sender<Msg>,
+pub(crate) struct App {
     theme: Theme,
-    now: i64,
-    screen: Screen,
-    accounts: AccountsView,
-    keys: KeysView,
-    models: ModelsView,
-    log: LogView,
-    overlay: Option<Overlay>,
+    clock: Clock,
+    snapshot: Snapshot,
+    loaded: bool,
+    view: View,
+    accounts: accounts::State,
+    activity: activity::State,
+    models: models::State,
+    keys: keys::State,
+    modals: Vec<Modal>,
     status: Option<Status>,
-    db_busy: bool,
-    header: Header,
-    jobs: JoinSet<()>,
-    loading: bool,
-    last_load: Instant,
-    reload_now: bool,
-    refresh: Option<Refresh>,
-    flow: Flow,
+    db_error: Option<String>,
+    jobs: Jobs,
+    clipboard: Vec<String>,
+    wide: bool,
+    quit: bool,
 }
 
 impl App {
-    fn new(home: PathBuf, http: reqwest::Client, tx: mpsc::Sender<Msg>, theme: Theme) -> Self {
+    fn new(jobs: Jobs, theme: Theme, zone: TimeZone) -> Self {
         Self {
-            home,
-            http,
-            tx,
             theme,
-            now: clock::now(),
-            screen: Screen::Accounts,
-            accounts: AccountsView::default(),
-            keys: KeysView::default(),
-            models: ModelsView::default(),
-            log: LogView::default(),
-            overlay: None,
+            clock: Clock::new(clock::now(), zone),
+            snapshot: Snapshot::default(),
+            loaded: false,
+            view: View::Accounts,
+            accounts: accounts::State::default(),
+            activity: activity::State::default(),
+            models: models::State::default(),
+            keys: keys::State::default(),
+            modals: Vec::new(),
             status: None,
-            db_busy: false,
-            header: Header::default(),
-            jobs: JoinSet::new(),
-            loading: false,
-            last_load: Instant::now(),
-            reload_now: true,
-            refresh: None,
-            flow: Flow::Run,
+            db_error: None,
+            jobs,
+            clipboard: Vec::new(),
+            wide: false,
+            quit: false,
         }
     }
 
-    fn ctx(&self) -> Ctx {
-        Ctx {
-            now: self.now,
+    fn env(&self) -> Env<'_> {
+        Env {
+            snapshot: &self.snapshot,
+            clock: &self.clock,
             theme: self.theme,
+            wide: self.wide,
+        }
+    }
+
+    fn apply(&mut self, snapshot: Snapshot) {
+        self.clock.now = snapshot.now;
+        self.snapshot = snapshot;
+        self.loaded = true;
+        self.db_error = None;
+    }
+
+    fn tick(&mut self) {
+        self.clock.now = clock::now();
+        if self
+            .status
+            .as_ref()
+            .is_some_and(|s| s.tone == Tone::Info && s.since.elapsed() >= INFO_LIFETIME)
+        {
+            self.status = None;
         }
     }
 
@@ -200,814 +130,358 @@ impl App {
         self.status = Some(Status {
             text: text.into(),
             tone,
-        });
-    }
-
-    fn server_url(&self) -> Option<String> {
-        self.header
-            .heartbeat
-            .as_ref()
-            .map(|(_, listen)| format!("http://{listen}"))
-    }
-
-    fn apply(&mut self, snapshot: Snapshot) {
-        self.db_busy = false;
-        self.now = snapshot.now;
-        let (limited, inactive) = accounts::needs_attention(&snapshot.accounts, snapshot.now);
-        self.header = Header {
-            limited,
-            inactive,
-            heartbeat: snapshot.heartbeat,
-        };
-        self.accounts.update(snapshot.accounts, snapshot.detail);
-        self.log.append(snapshot.log);
-        let log = &self.log;
-        self.keys
-            .update(snapshot.keys, |name| log.last_used(name), log.is_complete());
-        self.models.update(snapshot.models, snapshot.capabilities);
-    }
-
-    fn spawn_load(&mut self) {
-        self.loading = true;
-        let request = LoadRequest {
-            account: self.accounts.selected_name(),
-            model: self.models.selected_id(),
-            log_after: self.log.last_id(),
-        };
-        let home = self.home.clone();
-        let tx = self.tx.clone();
-        self.jobs.spawn(async move {
-            let result = data::load(&home, request).await;
-            if tx.send(Msg::Loaded(Box::new(result))).await.is_err() {
-                tracing::debug!("event loop closed before a load finished");
-            }
-        });
-    }
-
-    fn on_tick(&mut self) {
-        while let Some(joined) = self.jobs.try_join_next() {
-            if joined.is_err() {
-                self.loading = false;
-                self.set_status(Tone::Error, "a background task failed");
-            }
-        }
-        if !self.loading && (self.reload_now || self.last_load.elapsed() >= RELOAD) {
-            self.reload_now = false;
-            self.spawn_load();
-        }
-    }
-
-    fn on_msg(&mut self, msg: Msg) {
-        match msg {
-            Msg::Loaded(result) => {
-                self.loading = false;
-                self.last_load = Instant::now();
-                match *result {
-                    Ok(snapshot) => self.apply(snapshot),
-                    Err(error) => {
-                        tracing::debug!(%error, "database read failed");
-                        self.db_busy = true;
-                    }
-                }
-            }
-            Msg::Wizard(event) => {
-                let output = match self.overlay.as_mut() {
-                    Some(Overlay::Wizard(wizard)) => wizard.event(*event),
-                    Some(
-                        Overlay::Help
-                        | Overlay::Lines(_)
-                        | Overlay::Confirm(_)
-                        | Overlay::NewKey(_)
-                        | Overlay::Snippets(_),
-                    )
-                    | None => wizard::Output::Nothing,
-                };
-                self.drive(output);
-            }
-            Msg::KeyIssued { name, result } => match result {
-                Ok(issued) => {
-                    self.overlay = Some(Overlay::Snippets(SnippetTabs::issued(
-                        &name,
-                        &issued.key,
-                        issued.snippets,
-                    )));
-                    self.reload_now = true;
-                }
-                Err(error) => self.set_status(Tone::Error, error),
-            },
-            Msg::Finished(result) => {
-                match result {
-                    Ok(text) => self.set_status(Tone::Ok, text),
-                    Err(error) => self.set_status(Tone::Error, error),
-                }
-                self.reload_now = true;
-            }
-            Msg::RefreshStep { account, result } => {
-                let Some(refresh) = self.refresh.as_mut() else {
-                    return;
-                };
-                refresh.done += 1;
-                if let Err(reason) = result {
-                    refresh.failures.push(format!("{account}: {reason}"));
-                }
-                let text = format!("refreshing {}/{} · {account}", refresh.done, refresh.total);
-                self.set_status(Tone::Info, text);
-            }
-            Msg::RefreshDone => {
-                if let Some(refresh) = self.refresh.take() {
-                    if refresh.failures.is_empty() {
-                        self.set_status(Tone::Ok, format!("refreshed {} accounts", refresh.total));
-                    } else {
-                        let first = refresh.failures.first().cloned().unwrap_or_default();
-                        self.set_status(
-                            Tone::Error,
-                            format!(
-                                "refreshed {}: {} failed · {first}",
-                                refresh.total,
-                                refresh.failures.len()
-                            ),
-                        );
-                    }
-                }
-                self.reload_now = true;
-            }
-        }
-    }
-
-    fn on_event(&mut self, event: &Event) {
-        match event {
-            Event::Key(key) if key.kind != KeyEventKind::Release => self.on_key(key),
-            Event::Paste(text) => self.on_paste(text),
-            Event::Key(_)
-            | Event::FocusGained
-            | Event::FocusLost
-            | Event::Mouse(_)
-            | Event::Resize(..) => {}
-        }
-    }
-
-    fn on_paste(&mut self, text: &str) {
-        match self.overlay.as_mut() {
-            Some(Overlay::Wizard(wizard)) => wizard.paste(text),
-            Some(Overlay::Confirm(confirm)) => confirm.paste(text),
-            Some(Overlay::NewKey(new_key)) => new_key.paste(text),
-            Some(Overlay::Help | Overlay::Lines(_) | Overlay::Snippets(_)) => {}
-            None => match self.screen {
-                Screen::Accounts => self.accounts.paste(text),
-                Screen::Models => self.models.paste(text),
-                Screen::Log => self.log.paste(text),
-                Screen::Keys => {}
-            },
-        }
-    }
-
-    fn editing_filter(&self) -> bool {
-        match self.screen {
-            Screen::Accounts => self.accounts.is_editing(),
-            Screen::Models => self.models.is_editing(),
-            Screen::Log => self.log.is_editing(),
-            Screen::Keys => false,
-        }
-    }
-
-    fn on_key(&mut self, key: &KeyEvent) {
-        if keymap::is_interrupt(key) {
-            self.flow = Flow::Quit;
-            return;
-        }
-        if self.overlay.is_some() {
-            self.overlay_key(key);
-            return;
-        }
-        if self.editing_filter() {
-            let request = match self.screen {
-                Screen::Accounts => {
-                    self.accounts.edit_filter(key);
-                    None
-                }
-                Screen::Models => {
-                    self.models.edit_filter(key);
-                    None
-                }
-                Screen::Log => self.log.edit_filter(key),
-                Screen::Keys => None,
-            };
-            if let Some(request) = request {
-                self.request(request);
-            }
-            return;
-        }
-        let Some(command) = keymap::lookup(self.screen, key) else {
-            return;
-        };
-        match command {
-            Command::Goto(screen) => self.screen = screen,
-            Command::Quit => self.flow = Flow::Quit,
-            Command::Help => self.overlay = Some(Overlay::Help),
-            Command::Down
-            | Command::Up
-            | Command::Top
-            | Command::Bottom
-            | Command::Enter
-            | Command::Back
-            | Command::Filter
-            | Command::New
-            | Command::Login
-            | Command::Remove
-            | Command::Copy
-            | Command::Refresh => {
-                let request = match self.screen {
-                    Screen::Accounts => self.accounts.command(command, self.now, self.theme),
-                    Screen::Keys => self.keys.command(command, self.now),
-                    Screen::Models => self.models.command(command, self.theme),
-                    Screen::Log => self.log.command(command, self.theme),
-                };
-                if let Some(request) = request {
-                    self.request(request);
-                }
-            }
-        }
-    }
-
-    fn overlay_key(&mut self, key: &KeyEvent) {
-        let Some(mut overlay) = self.overlay.take() else {
-            return;
-        };
-        let reaction = match &mut overlay {
-            Overlay::Help => {
-                if matches!(
-                    key.code,
-                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('?' | 'q')
-                ) {
-                    Reaction::Close
-                } else {
-                    Reaction::Keep
-                }
-            }
-            Overlay::Lines(view) => match view.handle(key) {
-                Closed::Cancel | Closed::Done(()) => Reaction::Close,
-                Closed::Stay => Reaction::Keep,
-            },
-            Overlay::Confirm(confirm) => match confirm.handle(key) {
-                Closed::Done(action) => Reaction::Run(action),
-                Closed::Cancel => Reaction::Close,
-                Closed::Stay => Reaction::Keep,
-            },
-            Overlay::NewKey(new_key) => match new_key.handle(key) {
-                Closed::Done(name) => Reaction::CreateKey(name),
-                Closed::Cancel => Reaction::Close,
-                Closed::Stay => Reaction::Keep,
-            },
-            Overlay::Snippets(tabs) => match tabs.handle(key) {
-                Closed::Done(text) => Reaction::Copy(text),
-                Closed::Cancel => Reaction::Close,
-                Closed::Stay => Reaction::Keep,
-            },
-            Overlay::Wizard(wizard) => Reaction::Wizard(wizard.key(key)),
-        };
-        match reaction {
-            Reaction::Keep => self.overlay = Some(overlay),
-            Reaction::Close => {}
-            Reaction::Run(action) => self.run(action),
-            Reaction::CreateKey(name) => self.create_key(name),
-            Reaction::Copy(text) => {
-                self.overlay = Some(overlay);
-                self.copy(&text);
-            }
-            Reaction::Wizard(output) => {
-                self.overlay = Some(overlay);
-                self.drive(output);
-            }
-        }
-    }
-
-    fn drive(&mut self, output: wizard::Output) {
-        match output {
-            wizard::Output::Nothing => {}
-            wizard::Output::Close => {
-                self.overlay = None;
-                self.reload_now = true;
-            }
-            wizard::Output::Copy(text) => self.copy(&text),
-            wizard::Output::BeginLogin(_)
-            | wizard::Output::Complete { .. }
-            | wizard::Output::Save { .. } => {
-                if let Some(Overlay::Wizard(wizard)) = self.overlay.as_mut() {
-                    let task = wizard::launch(
-                        output,
-                        wizard.generation(),
-                        &self.home,
-                        &self.http,
-                        &self.tx,
-                    );
-                    wizard.set_task(task);
-                }
-            }
-        }
-    }
-
-    fn request(&mut self, request: Request) {
-        match request {
-            Request::Lines { title, lines } => {
-                self.overlay = Some(Overlay::Lines(TextView::new(title, lines)));
-            }
-            Request::AddAccount => {
-                let existing = self.accounts.accounts().to_vec();
-                self.overlay = Some(Overlay::Wizard(Box::new(Wizard::add(existing))));
-            }
-            Request::Relogin(account) => {
-                let existing = self.accounts.accounts().to_vec();
-                let (wizard, output) = Wizard::relogin(&account, existing);
-                self.overlay = Some(Overlay::Wizard(Box::new(wizard)));
-                self.drive(output);
-            }
-            Request::RemoveAccount(name) => {
-                self.overlay = Some(Overlay::Confirm(Confirm::type_name(
-                    "Remove account",
-                    vec![format!(
-                        "{name} and its model list are deleted from the database"
-                    )],
-                    &name.clone(),
-                    Action::RemoveAccount(name),
-                )));
-            }
-            Request::RefreshAccount(name) => self.start_refresh(vec![name]),
-            Request::RefreshAll => {
-                let names: Vec<String> = self
-                    .accounts
-                    .accounts()
-                    .iter()
-                    .map(|a| a.name.clone())
-                    .collect();
-                if names.is_empty() {
-                    self.set_status(Tone::Error, "no accounts to refresh");
-                    return;
-                }
-                let question = format!("refresh {} accounts?", names.len());
-                self.overlay = Some(Overlay::Confirm(Confirm::yes_no(
-                    &question,
-                    Action::Refresh(names),
-                )));
-            }
-            Request::NewKey => {
-                if self.server_url().is_none() {
-                    self.set_status(
-                        Tone::Error,
-                        "server address unknown: start `gw serve` once first",
-                    );
-                } else {
-                    self.overlay = Some(Overlay::NewKey(NewKey::default()));
-                }
-            }
-            Request::KeySnippets(name) => {
-                let base = self
-                    .server_url()
-                    .unwrap_or_else(|| "http://<server>".to_owned());
-                self.overlay = Some(Overlay::Snippets(SnippetTabs::placeholder(
-                    &name,
-                    ops::key::snippets(&base, "<key>"),
-                )));
-            }
-            Request::RevokeKey { name, last_used } => {
-                self.overlay = Some(Overlay::Confirm(Confirm::type_name(
-                    "Revoke key",
-                    vec![
-                        format!("LAST USED  {last_used}"),
-                        "clients using this key stop working at once".to_owned(),
-                    ],
-                    &name.clone(),
-                    Action::RevokeKey(name),
-                )));
-            }
-            Request::Copy(text) => self.copy(&text),
-            Request::Error(message) => self.set_status(Tone::Error, message),
-        }
-    }
-
-    fn run(&mut self, action: Action) {
-        let home = self.home.clone();
-        let tx = self.tx.clone();
-        match action {
-            Action::RemoveAccount(name) => {
-                self.jobs.spawn(async move {
-                    let result = ops::account::remove(&home, &name)
-                        .await
-                        .map(|()| format!("{name}: removed"))
-                        .map_err(|error| format!("{error:#}"));
-                    finish(&tx, result).await;
-                });
-            }
-            Action::RevokeKey(name) => {
-                self.jobs.spawn(async move {
-                    let wanted = name.clone();
-                    let result = ops::with_store(&home, move |store| store.revoke_key(&wanted))
-                        .await
-                        .map_err(|error| format!("{error:#}"))
-                        .and_then(|found| {
-                            if found {
-                                Ok(format!("{name}: revoked"))
-                            } else {
-                                Err(format!("no key named {name}"))
-                            }
-                        });
-                    finish(&tx, result).await;
-                });
-            }
-            Action::Refresh(names) => self.start_refresh(names),
-        }
-    }
-
-    fn create_key(&mut self, name: String) {
-        let Some(base) = self.server_url() else {
-            self.set_status(Tone::Error, "server address unknown");
-            return;
-        };
-        let home = self.home.clone();
-        let tx = self.tx.clone();
-        self.jobs.spawn(async move {
-            let wanted = name.clone();
-            let result = ops::with_store(&home, move |store| {
-                ops::key::create(store, &wanted, &base, clock::now())
-                    .map_err(|error| crate::store::Error::Invalid(error.to_string()))
-            })
-            .await
-            .map_err(|error| format!("{error:#}"));
-            if tx.send(Msg::KeyIssued { name, result }).await.is_err() {
-                tracing::debug!("event loop closed before a key was issued");
-            }
-        });
-    }
-
-    fn start_refresh(&mut self, names: Vec<String>) {
-        if self.refresh.is_some() {
-            self.set_status(Tone::Error, "a refresh is already running");
-            return;
-        }
-        self.refresh = Some(Refresh {
-            total: names.len(),
-            done: 0,
-            failures: Vec::new(),
-        });
-        self.set_status(Tone::Info, format!("refreshing 0/{}", names.len()));
-        let home = self.home.clone();
-        let http = self.http.clone();
-        let tx = self.tx.clone();
-        self.jobs.spawn(async move {
-            for account in names {
-                let result = match ops::model::refresh(&home, &http, Some(&account)).await {
-                    Ok(report) => report
-                        .into_iter()
-                        .next()
-                        .map_or(Err("no result".to_owned()), |r| r.result),
-                    Err(error) => Err(format!("{error:#}")),
-                };
-                if tx.send(Msg::RefreshStep { account, result }).await.is_err() {
-                    return;
-                }
-            }
-            if tx.send(Msg::RefreshDone).await.is_err() {
-                tracing::debug!("event loop closed before a refresh finished");
-            }
+            since: Instant::now(),
         });
     }
 
     fn copy(&mut self, text: &str) {
-        let mut out = std::io::stdout();
-        let written = out
-            .write_all(widgets::osc52(text).as_bytes())
-            .and_then(|()| out.flush());
-        match written {
-            Ok(()) => self.set_status(Tone::Ok, "copied (OSC 52)"),
-            Err(error) => self.set_status(Tone::Error, format!("copy failed: {error}")),
+        self.clipboard.push(osc52(text));
+        let first = text.lines().next().unwrap_or_default();
+        let more = if text.lines().count() > 1 { " …" } else { "" };
+        let preview = truncate(first, COPY_PREVIEW_CELLS);
+        self.set_status(Tone::Info, format!("Copied {preview}{more}"));
+    }
+
+    fn paste(&mut self, text: &str) {
+        if let Some(field) = self.field_mut() {
+            field.paste(text);
         }
     }
 
-    fn hints(&self) -> String {
-        match &self.overlay {
-            Some(Overlay::Help | Overlay::Lines(_)) => "esc close".to_owned(),
-            Some(Overlay::Confirm(confirm)) => keymap::hints_text(&confirm.hints()),
-            Some(Overlay::NewKey(_)) => "enter create  esc cancel".to_owned(),
-            Some(Overlay::Snippets(tabs)) => keymap::hints_text(&tabs.hints()),
-            Some(Overlay::Wizard(wizard)) => keymap::hints_text(&wizard.hints()),
-            None if self.editing_filter() => "enter apply  esc clear".to_owned(),
-            None => keymap::footer_text(self.screen),
+    fn filter_mut(&mut self) -> &mut Filter {
+        match self.view {
+            View::Accounts => self.accounts.filter_mut(),
+            View::Activity => self.activity.filter_mut(),
+            View::Models => self.models.filter_mut(),
+            View::Keys => self.keys.filter_mut(),
         }
     }
 
-    fn render(&mut self, frame: &mut Frame<'_>) {
-        let area = frame.area();
-        if area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
-            frame.render_widget(
-                Paragraph::new(format!(
-                    "terminal too small (need {MIN_WIDTH}×{MIN_HEIGHT})"
-                )),
-                area,
-            );
+    fn is_filtering(&mut self) -> bool {
+        self.modals.is_empty() && self.filter_mut().is_editing()
+    }
+
+    fn field_mut(&mut self) -> Option<&mut widget::text_field::TextField> {
+        if !self.modals.is_empty() {
+            return self.modals.last_mut().and_then(Modal::field_mut);
+        }
+        let filter = self.filter_mut();
+        filter.is_editing().then(|| filter.field_mut())
+    }
+
+    fn detail_open(&self) -> bool {
+        !self.wide
+            && match self.view {
+                View::Accounts => self.accounts.detail_open(),
+                View::Models => self.models.detail_open(),
+                View::Keys => self.keys.detail_open(),
+                View::Activity => false,
+            }
+    }
+
+    fn context(&mut self) -> Context {
+        if let Some(modal) = self.modals.last() {
+            return modal.context();
+        }
+        if self.is_filtering() {
+            Context::Filter
+        } else {
+            Context::of(self.view)
+        }
+    }
+
+    fn handle_view(&mut self, command: Command) -> Reply {
+        if self.is_filtering() {
+            let filter = self.filter_mut();
+            if command == Command::Select {
+                filter.apply();
+            } else if command == Command::Back {
+                filter.clear();
+            }
+            return Reply::None;
+        }
+        let env = Env {
+            snapshot: &self.snapshot,
+            clock: &self.clock,
+            theme: self.theme,
+            wide: self.wide,
+        };
+        match self.view {
+            View::Accounts => self.accounts.handle(command, &env),
+            View::Activity => self.activity.handle(command, &env),
+            View::Models => self.models.handle(command, &env),
+            View::Keys => self.keys.handle(command, &env),
+        }
+    }
+
+    fn sync_views(&mut self) {
+        let env = Env {
+            snapshot: &self.snapshot,
+            clock: &self.clock,
+            theme: self.theme,
+            wide: self.wide,
+        };
+        self.accounts.sync(&env);
+        self.activity.sync(&env);
+        self.models.sync(&env);
+        self.keys.sync(&env);
+    }
+
+    fn on_key(&mut self, key: KeyEvent) {
+        if key.kind == KeyEventKind::Release {
             return;
         }
-        let ctx = self.ctx();
-        let [header, body, footer] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .areas(area);
-        self.render_header(frame, header);
-        let block = Block::new()
-            .borders(Borders::ALL)
-            .border_style(ctx.theme.dim());
-        let inner = block.inner(body);
-        frame.render_widget(block, body);
-        match self.screen {
-            Screen::Accounts => self.accounts.render(frame, inner, &ctx),
-            Screen::Keys => self.keys.render(frame, inner, &ctx),
-            Screen::Models => self.models.render(frame, inner, &ctx),
-            Screen::Log => self.log.render(frame, inner, &ctx),
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.quit = true;
+            return;
         }
-        match &self.overlay {
-            Some(Overlay::Help) => modal::render_help(frame, body, self.screen, &ctx),
-            Some(Overlay::Lines(view)) => view.render(frame, body),
-            Some(Overlay::Confirm(confirm)) => confirm.render(frame, body, &ctx),
-            Some(Overlay::NewKey(new_key)) => new_key.render(frame, body, &ctx),
-            Some(Overlay::Snippets(tabs)) => tabs.render(frame, body, &ctx),
-            Some(Overlay::Wizard(wizard)) => wizard.render(frame, body, &ctx),
-            None => {}
+        if self.status.as_ref().is_some_and(|s| s.tone == Tone::Error) {
+            self.status = None;
         }
-        self.render_footer(frame, footer);
+        let context = self.context();
+        if let Some(field) = self.field_mut()
+            && field.handle_key(&key)
+        {
+            self.sync_views();
+            return;
+        }
+        if let Some(reply) = self.modals.last().and_then(|modal| modal.shortcut(&key)) {
+            update(self, Action::Reply(reply));
+            return;
+        }
+        if let Some(command) = keymap::lookup(context, &key) {
+            update(self, Action::Command(command));
+        }
     }
 
-    fn render_header(&self, frame: &mut Frame<'_>, area: Rect) {
-        let theme = self.theme;
-        let mut spans = vec![Span::styled(" gw ", theme.accent())];
-        for screen in Screen::ALL {
-            let label = format!(" {} {} ", screen.number(), screen.title());
-            let style = if screen == self.screen {
-                theme.selected()
-            } else {
-                Style::new()
-            };
-            spans.push(Span::styled(label, style));
+    fn on_event(&mut self, event: Event) {
+        match event {
+            Event::Key(key) => self.on_key(key),
+            Event::Paste(text) => update(self, Action::Paste(text)),
+            Event::Resize(width, _) => self.wide = width >= WIDE_COLUMNS,
+            Event::FocusGained | Event::FocusLost | Event::Mouse(_) => {}
         }
-        let right = format!(
-            "{} limited · {} inactive    {} ",
-            self.header.limited,
-            self.header.inactive,
-            server_text(self.header.heartbeat.as_ref(), self.now)
+    }
+}
+
+fn osc52(text: &str) -> String {
+    format!("\x1b]52;c;{}\x07", STANDARD.encode(text))
+}
+
+fn draw(frame: &mut Frame<'_>, app: &mut App) {
+    let area = frame.area();
+    app.wide = area.width >= WIDE_COLUMNS;
+    if area.width < MIN_COLUMNS || area.height < MIN_ROWS {
+        let message = format!(
+            "Terminal too small. gw needs at least {MIN_COLUMNS}x{MIN_ROWS}, this is {}x{}.",
+            area.width, area.height
         );
-        let width = u16::try_from(right.chars().count()).unwrap_or(u16::MAX);
-        let [left_area, right_area] =
-            Layout::horizontal([Constraint::Min(0), Constraint::Length(width)]).areas(area);
-        frame.render_widget(Paragraph::new(Line::from(spans)), left_area);
-        let attention = self.header.limited + self.header.inactive > 0;
-        let style = if attention {
-            theme.warn()
-        } else {
-            Style::new()
-        };
-        frame.render_widget(Paragraph::new(Span::styled(right, style)), right_area);
+        frame.render_widget(Paragraph::new(message).wrap(Wrap { trim: true }), area);
+        return;
     }
+    let theme = app.theme;
+    let [header, _, body, footer] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+    draw_header(frame, header, app);
+    if app.loaded {
+        draw_body(frame, body, app);
+    }
+    if !app.modals.is_empty() {
+        frame.buffer_mut().set_style(body, Theme::backdrop());
+    }
+    let modals = std::mem::take(&mut app.modals);
+    for modal in &modals {
+        modal.render(frame, area, theme, &app.clock);
+    }
+    app.modals = modals;
+    draw_footer(frame, footer, app);
+}
 
-    fn render_footer(&self, frame: &mut Frame<'_>, area: Rect) {
-        let theme = self.theme;
-        let mut parts: Vec<Span<'static>> = Vec::new();
-        if let Some(status) = &self.status {
-            let (mark, style) = match status.tone {
-                Tone::Info => ("", Style::new()),
-                Tone::Ok => ("✓ ", theme.ok()),
-                Tone::Error => ("✗ ", theme.bad()),
-            };
-            parts.push(Span::styled(
-                truncate(
-                    &format!("{mark}{}", status.text),
-                    usize::from(area.width / 2),
-                ),
-                style,
-            ));
+fn draw_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let theme = app.theme;
+    let titles: Vec<&str> = View::ALL.iter().map(|view| view.title()).collect();
+    let mut spans = vec![Span::styled(" gw", theme.accent()), Span::raw("    ")];
+    spans.extend(tabs::line(&titles, app.view.index()));
+    let left = Line::from(spans);
+    let right = if app.loaded {
+        match app.snapshot.server() {
+            Server::Running(addr) => Line::from(vec![
+                Span::styled("running", theme.ok()),
+                Span::styled(format!("  {addr} "), Theme::dim()),
+            ]),
+            Server::Stopped => Line::from(vec![Span::styled("stopped ", theme.error())]),
         }
-        if self.db_busy {
-            if !parts.is_empty() {
-                parts.push(Span::raw(" · "));
-            }
-            parts.push(Span::styled("db busy", theme.warn()));
-        }
-        parts.push(Span::raw(" "));
-        let width: usize = parts.iter().map(Span::width).sum();
-        let [hints, status] = Layout::horizontal([
-            Constraint::Min(0),
-            Constraint::Length(u16::try_from(width).unwrap_or(u16::MAX)),
-        ])
-        .areas(area);
+    } else {
+        Line::raw("")
+    };
+    let right_cells = u16::try_from(right.width()).unwrap_or(0);
+    let [left_area, right_area] =
+        Layout::horizontal([Constraint::Fill(1), Constraint::Length(right_cells)]).areas(area);
+    frame.render_widget(Paragraph::new(left), left_area);
+    frame.render_widget(Paragraph::new(right), right_area);
+}
+
+fn draw_body(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let theme = app.theme;
+    let env = app.env();
+    let mut body = area;
+    if app.snapshot.server() == Server::Stopped {
+        let [banner, rest] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
         frame.render_widget(
-            Paragraph::new(Span::styled(format!(" {}", self.hints()), theme.dim())),
-            hints,
+            Paragraph::new(Line::from(vec![
+                Span::styled(" Server is not running. ", theme.error()),
+                Span::raw("Start it with: gw serve --listen <addr>"),
+            ])),
+            banner,
         );
-        frame.render_widget(Paragraph::new(Line::from(parts)), status);
+        body = rest;
+    }
+    match app.view {
+        View::Accounts => app.accounts.render(frame, body, &env),
+        View::Activity => app.activity.render(frame, body, &env),
+        View::Models => app.models.render(frame, body, &env),
+        View::Keys => app.keys.render(frame, body, &env),
     }
 }
 
-async fn finish(tx: &mpsc::Sender<Msg>, result: Result<String, String>) {
-    if tx.send(Msg::Finished(result)).await.is_err() {
-        tracing::debug!("event loop closed before an action finished");
-    }
+fn draw_footer(frame: &mut Frame<'_>, area: Rect, app: &mut App) {
+    let theme = app.theme;
+    let context = if app.modals.is_empty() && !app.is_filtering() && app.detail_open() {
+        Context::Detail
+    } else {
+        app.context()
+    };
+    let hints = keymap::footer(context)
+        .iter()
+        .map(|(key, label)| format!("{key} {label}"))
+        .collect::<Vec<_>>()
+        .join("   ");
+    let (note, style) = match (&app.status, &app.db_error) {
+        (Some(status), _) => match status.tone {
+            Tone::Info => (status.text.clone(), theme.ok()),
+            Tone::Error => (status.text.clone(), theme.error()),
+        },
+        (None, Some(error)) => (format!("Can't read the database: {error}"), theme.error()),
+        (None, None) => (String::new(), Theme::dim()),
+    };
+    let width = usize::from(area.width);
+    let note = truncate(&note, width.saturating_sub(2));
+    let note_cells = format::width(&note);
+    let room = width.saturating_sub(note_cells + 3);
+    let hints = truncate(&hints, room);
+    let pad = width.saturating_sub(format::width(&hints) + note_cells + 2);
+    let line = Line::from(vec![
+        Span::styled(format!(" {hints}"), Theme::dim()),
+        Span::raw(" ".repeat(pad)),
+        Span::styled(note, style),
+        Span::raw(" "),
+    ]);
+    frame.render_widget(Paragraph::new(line), area);
 }
 
-struct TerminalGuard {
-    terminal: DefaultTerminal,
+struct Screen {
+    terminal: ratatui::DefaultTerminal,
 }
 
-impl TerminalGuard {
-    fn enter() -> std::io::Result<Self> {
-        let terminal = ratatui::try_init()?;
-        if let Err(error) = crossterm::execute!(std::io::stdout(), EnableBracketedPaste) {
-            ratatui::restore();
-            return Err(error);
-        }
+impl Screen {
+    fn enter() -> anyhow::Result<Self> {
+        let terminal = ratatui::init();
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if let Err(error) = execute!(std::io::stdout(), DisableBracketedPaste) {
+                tracing::warn!(%error, "could not turn off bracketed paste");
+            }
+            previous(info);
+        }));
+        execute!(std::io::stdout(), EnableBracketedPaste)
+            .context("could not turn on bracketed paste")?;
         Ok(Self { terminal })
     }
 }
 
-impl Drop for TerminalGuard {
+impl Drop for Screen {
     fn drop(&mut self) {
-        if let Err(error) = crossterm::execute!(std::io::stdout(), DisableBracketedPaste) {
-            tracing::warn!(%error, "could not disable bracketed paste");
+        if let Err(error) = execute!(std::io::stdout(), DisableBracketedPaste) {
+            tracing::warn!(%error, "could not turn off bracketed paste");
         }
-        ratatui::restore();
+        if let Err(error) = ratatui::try_restore() {
+            tracing::warn!(%error, "could not restore the terminal");
+        }
     }
 }
 
 pub(crate) async fn run(home: &Path) -> anyhow::Result<()> {
-    if !std::io::stdout().is_terminal() || !std::io::stdin().is_terminal() {
-        bail!(
-            "gw tui needs an interactive terminal; use the CLI instead: \
-             gw account list, gw key list, gw model list, gw log --follow"
-        );
-    }
-    let http = reqwest::Client::builder().build()?;
-    let (tx, mut rx) = mpsc::channel(64);
-    let mut app = App::new(home.to_path_buf(), http, tx, Theme::from_env());
-    let mut guard = TerminalGuard::enter().context("cannot start the terminal UI")?;
-    event_loop(&mut guard.terminal, &mut app, &mut rx).await
-}
-
-async fn event_loop(
-    terminal: &mut DefaultTerminal,
-    app: &mut App,
-    rx: &mut mpsc::Receiver<Msg>,
-) -> anyhow::Result<()> {
+    let (tx, mut rx) = mpsc::channel(CHANNEL_DEPTH);
+    let jobs = Jobs::new(home.to_path_buf(), tx);
+    let theme = Theme::detect();
+    Theme::set_selection_tint(theme.is_colored().then(selection_tint).flatten());
+    let mut app = App::new(jobs, theme, TimeZone::system());
+    app.jobs.start_loader();
+    let mut screen = Screen::enter()?;
     let mut events = EventStream::new();
-    let mut tick = tokio::time::interval(TICK);
-    loop {
-        app.now = clock::now();
-        terminal.draw(|frame| app.render(frame))?;
+    let mut ticker = tokio::time::interval(TICK);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    while !app.quit {
+        screen.terminal.draw(|frame| draw(frame, &mut app))?;
+        for sequence in app.clipboard.drain(..) {
+            screen
+                .terminal
+                .backend_mut()
+                .write_all(sequence.as_bytes())?;
+        }
+        screen.terminal.backend_mut().flush()?;
         tokio::select! {
             event = events.next() => match event {
-                Some(event) => app.on_event(&event?),
+                Some(Ok(event)) => app.on_event(event),
+                Some(Err(error)) => return Err(error).context("terminal input failed"),
                 None => break,
             },
-            _ = tick.tick() => app.on_tick(),
-            Some(msg) = rx.recv() => app.on_msg(msg),
-        }
-        if app.flow == Flow::Quit {
-            break;
+            Some(action) = rx.recv() => update(&mut app, action),
+            Some(joined) = app.jobs.join_next() => {
+                if let Err(error) = joined && !error.is_cancelled() {
+                    tracing::error!(%error, "a background task failed");
+                    app.set_status(Tone::Error, "A background task stopped unexpectedly");
+                }
+            }
+            _ = ticker.tick() => update(&mut app, Action::Tick),
         }
     }
+    app.jobs.shutdown();
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use crossterm::event::{KeyCode, KeyModifiers};
-
-    use super::*;
-    use crate::account::{Secret, State};
-    use crate::provider::{Kind, Method, Provider};
-    use crate::tui::widgets::testing;
-
-    const NOW: i64 = 1_800_000_000;
-
-    fn press(code: KeyCode) -> Event {
-        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
-    }
-
-    fn app() -> App {
-        let (tx, _rx) = mpsc::channel(8);
-        let mut app = App::new(
-            PathBuf::from("/nonexistent"),
-            reqwest::Client::new(),
-            tx,
-            Theme::new(false),
-        );
-        let account = |name: &str, state: State| Account {
-            name: name.to_owned(),
-            kind: Kind::new(Provider::OpenAi, Method::Key).unwrap(),
-            secret: Secret::Key { key: String::new() },
-            state,
-            usage: None,
-            usage_at: None,
-            created_at: NOW,
+fn selection_tint() -> Option<ratatui::style::Color> {
+    use terminal_colorsaurus::{QueryOptions, ThemeMode, color_palette};
+    let palette = color_palette(QueryOptions::default()).ok()?;
+    let truecolor =
+        std::env::var("COLORTERM").is_ok_and(|value| value == "truecolor" || value == "24bit");
+    if truecolor {
+        let mix = |bg: u16, fg: u16| {
+            let (bg, fg) = (f32::from(bg >> 8), f32::from(fg >> 8));
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "the blend stays within 0..=255"
+            )]
+            let channel = (bg + (fg - bg) * TINT).round() as u8;
+            channel
         };
-        app.apply(Snapshot {
-            now: NOW,
-            accounts: vec![
-                account("openai-key-1", State::Active),
-                account(
-                    "openai-key-2",
-                    State::Inactive {
-                        reason: "refresh failed".to_owned(),
-                    },
-                ),
-            ],
-            detail: None,
-            keys: Vec::new(),
-            models: Vec::new(),
-            capabilities: None,
-            heartbeat: Some((NOW - 3, "100.64.0.2:8787".to_owned())),
-            log: Vec::new(),
-        });
-        app
-    }
-
-    #[test]
-    fn server_status_goes_stale_after_ten_seconds() {
-        let beat = (NOW - 10, "100.64.0.2:8787".to_owned());
-        assert_eq!(
-            server_text(Some(&beat), NOW),
-            "server: running 100.64.0.2:8787"
-        );
-        assert_eq!(server_text(Some(&beat), NOW + 1), "server: not running");
-        assert_eq!(server_text(None, NOW), "server: not running");
-    }
-
-    #[test]
-    fn digits_switch_screens_and_q_quits() {
-        let mut app = app();
-        app.on_event(&press(KeyCode::Char('4')));
-        assert_eq!(app.screen, Screen::Log);
-        app.on_event(&press(KeyCode::Char('q')));
-        assert_eq!(app.flow, Flow::Quit);
-    }
-
-    #[test]
-    fn typing_q_into_the_remove_prompt_does_not_quit() {
-        let mut app = app();
-        app.on_event(&press(KeyCode::Char('d')));
-        assert!(matches!(app.overlay, Some(Overlay::Confirm(_))));
-        app.on_event(&press(KeyCode::Char('q')));
-        assert_eq!(app.flow, Flow::Run);
-        app.on_event(&press(KeyCode::Esc));
-        assert!(app.overlay.is_none());
-    }
-
-    #[test]
-    fn ctrl_c_quits_even_inside_a_modal() {
-        let mut app = app();
-        app.on_event(&press(KeyCode::Char('n')));
-        assert!(matches!(app.overlay, Some(Overlay::Wizard(_))));
-        app.on_event(&Event::Key(KeyEvent::new(
-            KeyCode::Char('c'),
-            KeyModifiers::CONTROL,
-        )));
-        assert_eq!(app.flow, Flow::Quit);
-    }
-
-    #[test]
-    fn creating_a_key_needs_a_known_server_address() {
-        let mut app = app();
-        app.header.heartbeat = None;
-        app.on_event(&press(KeyCode::Char('2')));
-        app.on_event(&press(KeyCode::Char('n')));
-        assert!(app.overlay.is_none());
-        assert_eq!(app.status.as_ref().map(|s| s.tone), Some(Tone::Error));
-    }
-
-    #[test]
-    fn failed_load_keeps_the_last_frame_and_flags_db_busy() {
-        let mut app = app();
-        app.on_msg(Msg::Loaded(Box::new(Err(anyhow::anyhow!("locked")))));
-        assert!(app.db_busy);
-        assert_eq!(app.accounts.accounts().len(), 2);
-    }
-
-    #[test]
-    fn small_terminal_shows_only_the_size_message() {
-        let mut app = app();
-        let text = testing::render(79, 23, |frame| app.render(frame));
-        assert_eq!(text.trim(), "terminal too small (need 80×24)");
-    }
-
-    #[test]
-    fn renders_full_frame_with_header_and_footer() {
-        let mut app = app();
-        app.set_status(Tone::Ok, "copied (OSC 52)");
-        let text = testing::render(110, 28, |frame| app.render(frame));
-        insta::assert_snapshot!("frame_accounts", text);
-    }
-
-    #[test]
-    fn renders_help_overlay() {
-        let mut app = app();
-        app.on_event(&press(KeyCode::Char('?')));
-        let text = testing::render(100, 26, |frame| app.render(frame));
-        insta::assert_snapshot!("frame_help", text);
+        let (bg, fg) = (palette.background, palette.foreground);
+        Some(ratatui::style::Color::Rgb(
+            mix(bg.r, fg.r),
+            mix(bg.g, fg.g),
+            mix(bg.b, fg.b),
+        ))
+    } else {
+        Some(ratatui::style::Color::Indexed(match palette.theme_mode() {
+            ThemeMode::Dark => 236,
+            ThemeMode::Light => 254,
+        }))
     }
 }

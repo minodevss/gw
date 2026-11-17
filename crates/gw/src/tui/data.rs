@@ -1,133 +1,183 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
+use tokio::sync::{Notify, mpsc};
+use tokio::task::JoinSet;
+
+use super::action::Action;
 use crate::account::Account;
-use crate::catalog::Capabilities;
-use crate::catalog::view::ModelView;
+use crate::catalog::Catalog;
+use crate::catalog::view::{self, ModelView};
 use crate::clock;
-use crate::ops::{self, account::Detail};
-use crate::store::{KeyRow, LogRow};
+use crate::ops::{self, model};
+use crate::select::{Choice, NoCandidate};
+use crate::store::{AccountUse, LogRow, LogSummary};
 
-pub(crate) const LOG_PAGE: u32 = 1000;
-const DAY: i64 = 86_400;
+const RELOAD: Duration = Duration::from_secs(1);
+const LOG_ROWS: u32 = 1000;
+const HOUR: i64 = 3600;
+const FIVE_HOURS: i64 = 5 * HOUR;
+const HEARTBEAT_FRESH_SECS: i64 = 10;
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct LoadRequest {
-    pub(crate) account: Option<String>,
-    pub(crate) model: Option<String>,
-    pub(crate) log_after: i64,
+#[derive(Debug, Clone)]
+pub(crate) struct KeyInfo {
+    pub(crate) name: String,
+    pub(crate) created_at: i64,
+    pub(crate) last_used: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ModelInfo {
+    pub(crate) view: ModelView,
+    pub(crate) next: Result<Choice, NoCandidate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct KeyStat {
-    pub(crate) name: String,
-    pub(crate) created_at: i64,
-    pub(crate) requests_24h: usize,
-    pub(crate) last_24h: Option<i64>,
+pub(crate) enum Server {
+    Running(String),
+    Stopped,
 }
 
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Snapshot {
     pub(crate) now: i64,
     pub(crate) accounts: Vec<Account>,
-    pub(crate) detail: Option<(String, Detail)>,
-    pub(crate) keys: Vec<KeyStat>,
-    pub(crate) models: Vec<ModelView>,
-    pub(crate) capabilities: Option<(String, Vec<(String, Capabilities)>)>,
-    pub(crate) heartbeat: Option<(i64, String)>,
+    pub(crate) catalog: Catalog,
+    pub(crate) models: Vec<ModelInfo>,
+    pub(crate) keys: Vec<KeyInfo>,
     pub(crate) log: Vec<LogRow>,
+    pub(crate) hour: LogSummary,
+    pub(crate) five_hours: Vec<AccountUse>,
+    pub(crate) heartbeat: Option<(i64, String)>,
 }
 
-pub(crate) async fn load(home: &Path, request: LoadRequest) -> anyhow::Result<Snapshot> {
-    let accounts = ops::account::list(home).await?;
-    let detail = match request.account {
-        Some(name) if accounts.iter().any(|a| a.name == name) => {
-            let detail = ops::account::detail(home, &name).await?;
-            Some((name, detail))
+impl Snapshot {
+    pub(crate) fn server(&self) -> Server {
+        match &self.heartbeat {
+            Some((at, listen)) if self.now - at <= HEARTBEAT_FRESH_SECS => {
+                Server::Running(listen.clone())
+            }
+            Some(_) | None => Server::Stopped,
         }
-        Some(_) | None => None,
-    };
-    let models = ops::model::views(home).await?;
-    let capabilities = match request.model {
-        Some(id) if models.iter().any(|m| m.id == id) => {
-            let caps = ops::model::capabilities(home, &id).await?;
-            Some((id, caps))
+    }
+
+    pub(crate) fn base_url(&self) -> String {
+        match &self.heartbeat {
+            Some((_, listen)) => format!("http://{listen}"),
+            None => "http://<gw address>".to_owned(),
         }
-        Some(_) | None => None,
-    };
-    let after = request.log_after;
+    }
+
+    pub(crate) fn account(&self, name: &str) -> Option<&Account> {
+        self.accounts.iter().find(|account| account.name == name)
+    }
+
+    pub(crate) fn account_names(&self) -> Vec<String> {
+        self.accounts.iter().map(|a| a.name.clone()).collect()
+    }
+}
+
+pub(crate) async fn load(home: &Path) -> anyhow::Result<Snapshot> {
     let now = clock::now();
-    let (keys, recent, heartbeat, log) = ops::with_store(home, move |store| {
-        Ok((
-            store.keys()?,
-            store.log_since(now - DAY)?,
-            store.last_heartbeat()?,
-            store.log_after(after, LOG_PAGE)?,
-        ))
-    })
-    .await?;
+    let (accounts, catalog, keys, last_used, log, hour, five_hours, heartbeat) =
+        ops::with_store(home, move |store| {
+            Ok((
+                store.accounts()?,
+                store.catalog()?,
+                store.keys()?,
+                store.key_last_used()?,
+                store.log_after(0, LOG_ROWS)?,
+                store.log_summary(now - HOUR)?,
+                store.account_use_since(now - FIVE_HOURS)?,
+                store.last_heartbeat()?,
+            ))
+        })
+        .await?;
+    let models = view::models(&catalog, &accounts)
+        .into_iter()
+        .map(|view| ModelInfo {
+            next: model::next_in(&accounts, &catalog, &view.id, now),
+            view,
+        })
+        .collect();
+    let keys = keys
+        .into_iter()
+        .map(|key| KeyInfo {
+            last_used: last_used
+                .iter()
+                .find(|(name, _)| *name == key.name)
+                .map(|(_, at)| *at),
+            name: key.name,
+            created_at: key.created_at,
+        })
+        .collect();
     Ok(Snapshot {
         now,
         accounts,
-        detail,
-        keys: key_stats(keys, &recent),
+        catalog,
         models,
-        capabilities,
-        heartbeat,
+        keys,
         log,
+        hour,
+        five_hours,
+        heartbeat,
     })
 }
 
-pub(crate) fn key_stats(keys: Vec<KeyRow>, recent: &[LogRow]) -> Vec<KeyStat> {
-    keys.into_iter()
-        .map(|key| {
-            let mine: Vec<&LogRow> = recent
-                .iter()
-                .filter(|row| row.key.as_deref() == Some(key.name.as_str()))
-                .collect();
-            KeyStat {
-                requests_24h: mine.len(),
-                last_24h: mine.iter().map(|row| row.ts).max(),
-                name: key.name,
-                created_at: key.created_at,
+pub(crate) fn spawn_loader(
+    set: &mut JoinSet<()>,
+    home: PathBuf,
+    tx: mpsc::Sender<Action>,
+    reload: Arc<Notify>,
+) {
+    set.spawn(async move {
+        loop {
+            let action = match load(&home).await {
+                Ok(snapshot) => Action::Data(Box::new(snapshot)),
+                Err(error) => {
+                    tracing::warn!(%error, "database read failed");
+                    Action::LoadFailed(format!("{error:#}"))
+                }
+            };
+            if tx.send(action).await.is_err() {
+                return;
             }
-        })
-        .collect()
+            tokio::select! {
+                () = tokio::time::sleep(RELOAD) => {}
+                () = reload.notified() => {}
+            }
+        }
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn row(key: &str, ts: i64) -> LogRow {
-        LogRow {
-            key: Some(key.to_owned()),
-            ts,
-            ..LogRow::default()
-        }
+    #[test]
+    fn server_is_stopped_when_the_heartbeat_is_stale_or_missing() {
+        let mut snapshot = Snapshot {
+            now: 100,
+            heartbeat: Some((95, "127.0.0.1:8787".to_owned())),
+            ..Snapshot::default()
+        };
+        assert_eq!(
+            snapshot.server(),
+            Server::Running("127.0.0.1:8787".to_owned())
+        );
+        snapshot.heartbeat = Some((89, "127.0.0.1:8787".to_owned()));
+        assert_eq!(snapshot.server(), Server::Stopped);
+        snapshot.heartbeat = None;
+        assert_eq!(snapshot.server(), Server::Stopped);
     }
 
-    #[test]
-    fn counts_requests_and_last_use_per_key() {
-        let keys = vec![
-            KeyRow {
-                name: "macbook".to_owned(),
-                created_at: 1,
-            },
-            KeyRow {
-                name: "desktop".to_owned(),
-                created_at: 2,
-            },
-        ];
-        let stats = key_stats(
-            keys,
-            &[row("macbook", 10), row("macbook", 30), row("other", 5)],
-        );
-        assert_eq!(
-            stats.first().map(|s| (s.requests_24h, s.last_24h)),
-            Some((2, Some(30)))
-        );
-        assert_eq!(
-            stats.get(1).map(|s| (s.requests_24h, s.last_24h)),
-            Some((0, None))
-        );
+    #[tokio::test]
+    async fn loads_an_empty_database() {
+        let dir = std::env::temp_dir().join(format!("gw-tui-data-{}", std::process::id()));
+        let snapshot = load(&dir).await.unwrap();
+        assert!(snapshot.accounts.is_empty());
+        assert_eq!(snapshot.server(), Server::Stopped);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

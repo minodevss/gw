@@ -85,6 +85,22 @@ pub(crate) struct KeyRow {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct LogSummary {
+    pub(crate) requests: i64,
+    pub(crate) limits: i64,
+    pub(crate) errors: i64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct AccountUse {
+    pub(crate) account: String,
+    pub(crate) requests: i64,
+    pub(crate) input: i64,
+    pub(crate) cached: i64,
+    pub(crate) output: i64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct LogRow {
     pub(crate) id: i64,
     pub(crate) ts: i64,
@@ -217,6 +233,26 @@ impl Store {
             params![name, serde_json::to_string(usage)?, at],
         )?;
         Ok(())
+    }
+
+    pub(crate) fn rename_account(&mut self, old: &str, new: &str) -> Result<bool> {
+        let tx = self.conn.transaction()?;
+        tx.pragma_update(None, "defer_foreign_keys", "ON")?;
+        let taken: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM accounts WHERE name = ?1)",
+            [new],
+            |row| row.get(0),
+        )?;
+        if taken {
+            return Err(Error::Invalid(format!("account {new} already exists")));
+        }
+        let renamed = tx.execute("UPDATE accounts SET name = ?2 WHERE name = ?1", [old, new])?;
+        tx.execute(
+            "UPDATE catalog SET account = ?2 WHERE account = ?1",
+            [old, new],
+        )?;
+        tx.commit()?;
+        Ok(renamed > 0)
     }
 
     pub(crate) fn remove_account(&self, name: &str) -> Result<bool> {
@@ -357,6 +393,53 @@ impl Store {
              FROM log WHERE ts >= ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map([since], read_log)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub(crate) fn log_summary(&self, since: i64) -> Result<LogSummary> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*),
+                    COALESCE(SUM(reason = 'limit'), 0),
+                    COALESCE(SUM(status >= 400 AND reason != 'limit'), 0)
+             FROM log WHERE ts >= ?1",
+            [since],
+            |row| {
+                Ok(LogSummary {
+                    requests: row.get(0)?,
+                    limits: row.get(1)?,
+                    errors: row.get(2)?,
+                })
+            },
+        )?)
+    }
+
+    pub(crate) fn account_use_since(&self, since: i64) -> Result<Vec<AccountUse>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT account, COUNT(*),
+                    COALESCE(SUM(COALESCE(input, 0) + COALESCE(cache_read, 0) + COALESCE(cache_write, 0)), 0),
+                    COALESCE(SUM(COALESCE(cache_read, 0)), 0),
+                    COALESCE(SUM(COALESCE(output, 0)), 0)
+             FROM log
+             WHERE ts >= ?1 AND account IS NOT NULL AND reason != 'limit'
+             GROUP BY account",
+        )?;
+        let rows = stmt.query_map([since], |row| {
+            Ok(AccountUse {
+                account: row.get(0)?,
+                requests: row.get(1)?,
+                input: row.get(2)?,
+                cached: row.get(3)?,
+                output: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub(crate) fn key_last_used(&self) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key, MAX(ts) FROM log WHERE key IS NOT NULL GROUP BY key")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
@@ -624,5 +707,70 @@ mod tests {
         let rows = store.log_after(0, 2).unwrap();
         let ts: Vec<i64> = rows.iter().map(|r| r.ts).collect();
         assert_eq!(ts, [4, 5]);
+    }
+
+    #[test]
+    fn rename_moves_catalog_and_keeps_log_names() {
+        let mut store = store();
+        store.insert_account(&account("old")).unwrap();
+        store
+            .replace_catalog("old", &[("m".to_owned(), Capabilities::default())], 1)
+            .unwrap();
+        store
+            .insert_log(&LogRow {
+                account: Some("old".to_owned()),
+                ..LogRow::default()
+            })
+            .unwrap();
+        assert!(store.rename_account("old", "new").unwrap());
+        assert!(store.account("new").unwrap().is_some());
+        assert!(store.catalog().unwrap().get("new", "m").is_some());
+        assert_eq!(
+            store
+                .log_after(0, 10)
+                .unwrap()
+                .first()
+                .and_then(|r| r.account.clone()),
+            Some("old".to_owned())
+        );
+    }
+
+    #[test]
+    fn rename_refuses_a_taken_name() {
+        let mut store = store();
+        store.insert_account(&account("a")).unwrap();
+        store.insert_account(&account("b")).unwrap();
+        assert!(store.rename_account("a", "b").is_err());
+        assert!(store.account("a").unwrap().is_some());
+    }
+
+    #[test]
+    fn summaries_count_limits_errors_and_tokens() {
+        let store = store();
+        let row = |reason: &str, status: u16, input: i64| LogRow {
+            ts: 100,
+            key: Some("k".to_owned()),
+            account: Some("a".to_owned()),
+            reason: reason.to_owned(),
+            status,
+            input: Some(input),
+            cache_read: Some(5),
+            output: Some(2),
+            ..LogRow::default()
+        };
+        store.insert_log(&row("new", 200, 10)).unwrap();
+        store.insert_log(&row("limit", 429, 0)).unwrap();
+        store.insert_log(&row("new", 502, 10)).unwrap();
+        let summary = store.log_summary(0).unwrap();
+        assert_eq!(
+            (summary.requests, summary.limits, summary.errors),
+            (3, 1, 1)
+        );
+        let used = store.account_use_since(0).unwrap();
+        assert_eq!(
+            used.first().map(|u| (u.requests, u.input, u.cached)),
+            Some((2, 30, 10))
+        );
+        assert_eq!(store.key_last_used().unwrap(), vec![("k".to_owned(), 100)]);
     }
 }

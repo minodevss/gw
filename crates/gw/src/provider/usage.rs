@@ -21,37 +21,14 @@ impl Usage {
     }
 }
 
+const ANTHROPIC_PREFIX: &str = "anthropic-ratelimit-unified-";
+const UTILIZATION: &str = "-utilization";
+const USED_PERCENT: &str = "-used-percent";
+
 pub(crate) fn usage_from_headers(kind: Kind, headers: &HeaderMap) -> Option<Usage> {
-    let windows: Vec<Window> = match (kind.provider(), kind.method()) {
-        (Provider::Anthropic, Method::Oauth | Method::SetupToken) => ["5h", "7d"]
-            .into_iter()
-            .filter_map(|label| {
-                let used = number(
-                    headers,
-                    &format!("anthropic-ratelimit-unified-{label}-utilization"),
-                )?;
-                Some(Window {
-                    label: label.to_owned(),
-                    used,
-                    reset_at: integer(
-                        headers,
-                        &format!("anthropic-ratelimit-unified-{label}-reset"),
-                    ),
-                })
-            })
-            .collect(),
-        (Provider::OpenAi, Method::Codex) => ["primary", "secondary"]
-            .into_iter()
-            .filter_map(|slot| {
-                let percent = number(headers, &format!("x-codex-{slot}-used-percent"))?;
-                let minutes = integer(headers, &format!("x-codex-{slot}-window-minutes"));
-                Some(Window {
-                    label: minutes.map_or_else(|| slot.to_owned(), window_label),
-                    used: percent / 100.0,
-                    reset_at: integer(headers, &format!("x-codex-{slot}-reset-at")),
-                })
-            })
-            .collect(),
+    let mut windows: Vec<Window> = match (kind.provider(), kind.method()) {
+        (Provider::Anthropic, Method::Oauth | Method::SetupToken) => anthropic_windows(headers),
+        (Provider::OpenAi, Method::Codex) => codex_windows(headers),
         (
             Provider::Anthropic
             | Provider::OpenAi
@@ -61,7 +38,55 @@ pub(crate) fn usage_from_headers(kind: Kind, headers: &HeaderMap) -> Option<Usag
             _,
         ) => Vec::new(),
     };
+    windows.sort_by(|a, b| a.label.cmp(&b.label));
     (!windows.is_empty()).then_some(Usage { windows })
+}
+
+// Claude Code reads anthropic-ratelimit-unified-<window>-utilization for every window the plan
+// has (5h, 7d, and per-model windows), so every such header is taken as reported. Grace values
+// describe a tolerance band, not a usage window.
+fn anthropic_windows(headers: &HeaderMap) -> Vec<Window> {
+    headers
+        .keys()
+        .filter_map(|name| {
+            name.as_str()
+                .strip_prefix(ANTHROPIC_PREFIX)?
+                .strip_suffix(UTILIZATION)
+        })
+        .filter(|window| !window.starts_with("grace"))
+        .filter_map(|window| {
+            Some(Window {
+                label: window.to_owned(),
+                used: number(headers, &format!("{ANTHROPIC_PREFIX}{window}{UTILIZATION}"))?,
+                reset_at: integer(headers, &format!("{ANTHROPIC_PREFIX}{window}-reset")),
+            })
+        })
+        .collect()
+}
+
+// Codex parses x-<limit>-<primary|secondary>-used-percent for the codex limit and for any
+// additional metered limit.
+// https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/rate_limits.rs
+fn codex_windows(headers: &HeaderMap) -> Vec<Window> {
+    headers
+        .keys()
+        .filter_map(|name| name.as_str().strip_prefix("x-")?.strip_suffix(USED_PERCENT))
+        .filter_map(|slot| {
+            let (limit, _) = slot.rsplit_once('-')?;
+            let percent = number(headers, &format!("x-{slot}{USED_PERCENT}"))?;
+            let minutes = integer(headers, &format!("x-{slot}-window-minutes"));
+            let duration = minutes.map_or_else(|| slot.to_owned(), window_label);
+            Some(Window {
+                label: if limit == "codex" {
+                    duration
+                } else {
+                    format!("{duration}_{limit}")
+                },
+                used: percent / 100.0,
+                reset_at: integer(headers, &format!("x-{slot}-reset-at")),
+            })
+        })
+        .collect()
 }
 
 fn number(headers: &HeaderMap, name: &str) -> Option<f64> {

@@ -1,0 +1,34 @@
+---
+source: crates/gw/src/tui/tests.rs
+expression: "Harness::new(snapshot).view(View::Activity).render()"
+---
+ gw    Accounts   Activity   Models   Keys                                                     running  100.64.0.2:8787
+
+ No requests yet.
+ Requests show up here as clients use gw.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ↑↓ select   enter actions   end follow   / filter   ? help

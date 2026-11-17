@@ -1,447 +1,884 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::action::Command;
+use super::view::View;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Screen {
+pub(crate) enum Context {
     Accounts,
-    Keys,
+    Activity,
     Models,
-    Log,
+    Keys,
+    Filter,
+    Menu,
+    Confirm,
+    Help,
+    Choice,
+    Input,
+    Done,
+    Code,
+    Waiting,
+    Failed,
+    OneTime,
+    Busy,
+    List,
+    Find,
+    Global,
+    Detail,
 }
 
-impl Screen {
-    pub(crate) const ALL: [Self; 4] = [Self::Accounts, Self::Keys, Self::Models, Self::Log];
-
-    pub(crate) fn title(self) -> &'static str {
+impl Context {
+    fn chain(self) -> &'static [Context] {
         match self {
-            Self::Accounts => "Accounts",
-            Self::Keys => "Keys",
-            Self::Models => "Models",
-            Self::Log => "Log",
+            Self::Accounts => &[Self::List, Self::Accounts, Self::Find, Self::Global],
+            Self::Activity => &[Self::List, Self::Activity, Self::Find, Self::Global],
+            Self::Models => &[Self::List, Self::Models, Self::Find, Self::Global],
+            Self::Keys => &[Self::List, Self::Keys, Self::Global],
+            Self::Filter => &[Self::Filter],
+            Self::Menu => &[Self::Menu],
+            Self::Confirm => &[Self::Confirm],
+            Self::Help => &[Self::Help],
+            Self::Choice => &[Self::Choice],
+            Self::Input => &[Self::Input],
+            Self::Done => &[Self::Done],
+            Self::Code => &[Self::Code],
+            Self::Waiting => &[Self::Waiting],
+            Self::Failed => &[Self::Failed],
+            Self::OneTime => &[Self::OneTime],
+            Self::Busy => &[],
+            Self::List => &[Self::List],
+            Self::Find => &[Self::Find],
+            Self::Global => &[Self::Global],
+            Self::Detail => &[Self::Detail, Self::Global],
         }
     }
 
-    pub(crate) fn number(self) -> u8 {
-        match self {
-            Self::Accounts => 1,
-            Self::Keys => 2,
-            Self::Models => 3,
-            Self::Log => 4,
+    pub(crate) fn of(view: View) -> Self {
+        match view {
+            View::Accounts => Self::Accounts,
+            View::Activity => Self::Activity,
+            View::Models => Self::Models,
+            View::Keys => Self::Keys,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Command {
-    Goto(Screen),
-    Down,
-    Up,
-    Top,
-    Bottom,
-    Enter,
-    Back,
-    Filter,
-    New,
-    Login,
-    Remove,
-    Copy,
-    Refresh,
-    Help,
-    Quit,
+struct Key {
+    code: KeyCode,
+    mods: KeyModifiers,
 }
 
-type Chord = (KeyCode, KeyModifiers);
+const fn ch(c: char) -> Key {
+    Key {
+        code: KeyCode::Char(c),
+        mods: KeyModifiers::NONE,
+    }
+}
 
+const fn code(code: KeyCode) -> Key {
+    Key {
+        code,
+        mods: KeyModifiers::NONE,
+    }
+}
+
+const fn ctrl(c: char) -> Key {
+    Key {
+        code: KeyCode::Char(c),
+        mods: KeyModifiers::CONTROL,
+    }
+}
+
+impl Key {
+    fn matches(self, event: &KeyEvent) -> bool {
+        let mods = if matches!(event.code, KeyCode::Char(_) | KeyCode::BackTab) {
+            event.modifiers.difference(KeyModifiers::SHIFT)
+        } else {
+            event.modifiers
+        };
+        event.code == self.code && mods == self.mods
+    }
+
+    fn name(self) -> String {
+        let base = match self.code {
+            KeyCode::Char(' ') => "space".to_owned(),
+            KeyCode::Char(c) => c.to_string(),
+            KeyCode::Enter => "enter".to_owned(),
+            KeyCode::Esc => "esc".to_owned(),
+            KeyCode::Tab => "tab".to_owned(),
+            KeyCode::BackTab => "shift-tab".to_owned(),
+            KeyCode::Up => "↑".to_owned(),
+            KeyCode::Down => "↓".to_owned(),
+            KeyCode::Left => "←".to_owned(),
+            KeyCode::Right => "→".to_owned(),
+            KeyCode::PageUp => "pgup".to_owned(),
+            KeyCode::PageDown => "pgdn".to_owned(),
+            KeyCode::Home => "home".to_owned(),
+            KeyCode::End => "end".to_owned(),
+            KeyCode::Backspace => "backspace".to_owned(),
+            KeyCode::Delete => "delete".to_owned(),
+            KeyCode::Insert => "insert".to_owned(),
+            KeyCode::F(number) => format!("f{number}"),
+            KeyCode::Null
+            | KeyCode::CapsLock
+            | KeyCode::ScrollLock
+            | KeyCode::NumLock
+            | KeyCode::PrintScreen
+            | KeyCode::Pause
+            | KeyCode::Menu
+            | KeyCode::KeypadBegin
+            | KeyCode::Media(_)
+            | KeyCode::Modifier(_) => String::new(),
+        };
+        if self.mods.contains(KeyModifiers::CONTROL) {
+            format!("ctrl-{base}")
+        } else {
+            base
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 struct Binding {
+    context: Context,
+    keys: &'static [Key],
     command: Command,
-    chords: &'static [Chord],
-    keys: &'static str,
     label: &'static str,
-    screens: &'static [Screen],
-    footer: bool,
+    footer: Option<(&'static str, &'static str)>,
 }
 
-const NONE: KeyModifiers = KeyModifiers::NONE;
-const EVERYWHERE: &[Screen] = &[Screen::Accounts, Screen::Keys, Screen::Models, Screen::Log];
-const ACCOUNTS: &[Screen] = &[Screen::Accounts];
-const KEYS: &[Screen] = &[Screen::Keys];
-const LOG: &[Screen] = &[Screen::Log];
-const FILTERABLE: &[Screen] = &[Screen::Accounts, Screen::Models, Screen::Log];
-const NOT_LOG: &[Screen] = &[Screen::Accounts, Screen::Keys, Screen::Models];
-const DETAILED: &[Screen] = &[Screen::Accounts, Screen::Models, Screen::Log];
-const REFRESHABLE: &[Screen] = &[Screen::Accounts, Screen::Models];
-
-const fn binding(
+const fn bind(
+    context: Context,
+    keys: &'static [Key],
     command: Command,
-    chords: &'static [Chord],
-    keys: &'static str,
     label: &'static str,
-    screens: &'static [Screen],
-    footer: bool,
+    footer: Option<(&'static str, &'static str)>,
 ) -> Binding {
     Binding {
-        command,
-        chords,
+        context,
         keys,
+        command,
         label,
-        screens,
         footer,
     }
 }
 
-const BINDINGS: &[Binding] = &[
-    binding(
-        Command::Goto(Screen::Accounts),
-        &[(KeyCode::Char('1'), NONE)],
-        "1-4",
-        "screen",
-        EVERYWHERE,
-        false,
+const TABLE: &[Binding] = &[
+    bind(
+        Context::Detail,
+        &[code(KeyCode::Left)],
+        Command::Left,
+        "back to the list",
+        Some(("←", "back")),
     ),
-    binding(
-        Command::Goto(Screen::Keys),
-        &[(KeyCode::Char('2'), NONE)],
-        "",
-        "",
-        EVERYWHERE,
-        false,
+    bind(
+        Context::Detail,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "actions for this item",
+        Some(("enter", "actions")),
     ),
-    binding(
-        Command::Goto(Screen::Models),
-        &[(KeyCode::Char('3'), NONE)],
-        "",
-        "",
-        EVERYWHERE,
-        false,
-    ),
-    binding(
-        Command::Goto(Screen::Log),
-        &[(KeyCode::Char('4'), NONE)],
-        "",
-        "",
-        EVERYWHERE,
-        false,
-    ),
-    binding(
-        Command::Down,
-        &[(KeyCode::Char('j'), NONE), (KeyCode::Down, NONE)],
-        "j/k",
-        "move",
-        EVERYWHERE,
-        false,
-    ),
-    binding(
+    bind(
+        Context::List,
+        &[code(KeyCode::Up), ch('k')],
         Command::Up,
-        &[(KeyCode::Char('k'), NONE), (KeyCode::Up, NONE)],
-        "",
-        "",
-        EVERYWHERE,
-        false,
+        "move up",
+        None,
     ),
-    binding(
+    bind(
+        Context::List,
+        &[code(KeyCode::Down), ch('j')],
+        Command::Down,
+        "move down",
+        Some(("↑↓", "select")),
+    ),
+    bind(
+        Context::List,
+        &[code(KeyCode::PageUp)],
+        Command::PageUp,
+        "page up",
+        None,
+    ),
+    bind(
+        Context::List,
+        &[code(KeyCode::PageDown)],
+        Command::PageDown,
+        "page down",
+        None,
+    ),
+    bind(
+        Context::List,
+        &[code(KeyCode::Home), ch('g')],
         Command::Top,
-        &[(KeyCode::Char('g'), NONE), (KeyCode::Home, NONE)],
-        "g",
-        "top",
-        EVERYWHERE,
-        false,
+        "first",
+        None,
     ),
-    binding(
+    bind(
+        Context::List,
+        &[code(KeyCode::End), ch('G')],
         Command::Bottom,
-        &[(KeyCode::Char('G'), NONE), (KeyCode::End, NONE)],
-        "G",
-        "follow",
-        LOG,
-        true,
+        "last",
+        None,
     ),
-    binding(
-        Command::Bottom,
-        &[(KeyCode::Char('G'), NONE), (KeyCode::End, NONE)],
-        "G",
-        "bottom",
-        NOT_LOG,
-        false,
+    bind(
+        Context::List,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "actions for the selection",
+        Some(("enter", "actions")),
     ),
-    binding(
-        Command::New,
-        &[(KeyCode::Char('n'), NONE)],
-        "n",
-        "add",
-        ACCOUNTS,
-        true,
+    bind(
+        Context::List,
+        &[code(KeyCode::Right)],
+        Command::Right,
+        "open details",
+        None,
     ),
-    binding(
-        Command::New,
-        &[(KeyCode::Char('n'), NONE)],
-        "n",
-        "create",
-        KEYS,
-        true,
+    bind(
+        Context::List,
+        &[code(KeyCode::Left)],
+        Command::Left,
+        "close details",
+        None,
     ),
-    binding(
-        Command::Login,
-        &[(KeyCode::Char('l'), NONE)],
-        "l",
-        "login",
-        ACCOUNTS,
-        true,
-    ),
-    binding(
-        Command::Remove,
-        &[(KeyCode::Char('d'), NONE)],
-        "d",
-        "remove",
-        ACCOUNTS,
-        true,
-    ),
-    binding(
-        Command::Remove,
-        &[(KeyCode::Char('d'), NONE)],
-        "d",
-        "revoke",
-        KEYS,
-        true,
-    ),
-    binding(
-        Command::Refresh,
-        &[(KeyCode::Char('R'), NONE)],
-        "R",
-        "refresh",
-        REFRESHABLE,
-        true,
-    ),
-    binding(
-        Command::Filter,
-        &[(KeyCode::Char('/'), NONE)],
-        "/",
-        "filter",
-        FILTERABLE,
-        true,
-    ),
-    binding(
-        Command::Enter,
-        &[(KeyCode::Enter, NONE)],
-        "enter",
-        "detail",
-        DETAILED,
-        true,
-    ),
-    binding(
-        Command::Enter,
-        &[(KeyCode::Enter, NONE)],
-        "enter",
-        "setup",
-        KEYS,
-        true,
-    ),
-    binding(
-        Command::Copy,
-        &[(KeyCode::Char('y'), NONE)],
-        "y",
-        "copy selected name (OSC 52)",
-        EVERYWHERE,
-        false,
-    ),
-    binding(
+    bind(
+        Context::List,
+        &[code(KeyCode::Esc)],
         Command::Back,
-        &[(KeyCode::Esc, NONE)],
-        "esc",
-        "back",
-        EVERYWHERE,
-        false,
+        "clear the filter, close details",
+        None,
     ),
-    binding(
+    bind(
+        Context::Find,
+        &[ch('/')],
+        Command::Filter,
+        "filter",
+        Some(("/", "filter")),
+    ),
+    bind(Context::Keys, &[ch('/')], Command::Filter, "filter", None),
+    bind(
+        Context::Accounts,
+        &[ch('a')],
+        Command::Add,
+        "add an account",
+        Some(("a", "add")),
+    ),
+    bind(
+        Context::Accounts,
+        &[ch('r')],
+        Command::RefreshUsage,
+        "refresh usage (asks the provider)",
+        None,
+    ),
+    bind(
+        Context::Accounts,
+        &[ch('l')],
+        Command::Relogin,
+        "sign in again",
+        None,
+    ),
+    bind(
+        Context::Accounts,
+        &[ch('e')],
+        Command::Rename,
+        "rename",
+        None,
+    ),
+    bind(
+        Context::Accounts,
+        &[ch('d')],
+        Command::Remove,
+        "remove",
+        None,
+    ),
+    bind(
+        Context::Activity,
+        &[code(KeyCode::End), ch('G')],
+        Command::Bottom,
+        "jump to the newest and follow",
+        Some(("end", "follow")),
+    ),
+    bind(
+        Context::Activity,
+        &[ch('f')],
+        Command::FilterAccount,
+        "show only this account",
+        None,
+    ),
+    bind(
+        Context::Activity,
+        &[ch('s')],
+        Command::FilterSession,
+        "show only this session",
+        None,
+    ),
+    bind(
+        Context::Activity,
+        &[ch('c')],
+        Command::Copy,
+        "copy the details",
+        None,
+    ),
+    bind(
+        Context::Models,
+        &[ch('r')],
+        Command::RefreshModels,
+        "refresh model lists (asks every provider)",
+        Some(("r", "refresh")),
+    ),
+    bind(
+        Context::Models,
+        &[ch('c')],
+        Command::Copy,
+        "copy the model name",
+        None,
+    ),
+    bind(
+        Context::Keys,
+        &[ch('a')],
+        Command::Add,
+        "create a key",
+        Some(("a", "new key")),
+    ),
+    bind(
+        Context::Keys,
+        &[ch('d')],
+        Command::Remove,
+        "revoke the key",
+        None,
+    ),
+    bind(
+        Context::Keys,
+        &[ch('c')],
+        Command::Copy,
+        "copy the client settings",
+        Some(("c", "copy")),
+    ),
+    bind(
+        Context::Global,
+        &[code(KeyCode::Tab)],
+        Command::NextView,
+        "next screen",
+        None,
+    ),
+    bind(
+        Context::Global,
+        &[code(KeyCode::BackTab)],
+        Command::PrevView,
+        "previous screen",
+        None,
+    ),
+    bind(
+        Context::Global,
+        &[ch('1')],
+        Command::Goto(View::Accounts),
+        "Accounts",
+        None,
+    ),
+    bind(
+        Context::Global,
+        &[ch('2')],
+        Command::Goto(View::Activity),
+        "Activity",
+        None,
+    ),
+    bind(
+        Context::Global,
+        &[ch('3')],
+        Command::Goto(View::Models),
+        "Models",
+        None,
+    ),
+    bind(
+        Context::Global,
+        &[ch('4')],
+        Command::Goto(View::Keys),
+        "Keys",
+        None,
+    ),
+    bind(
+        Context::Global,
+        &[ch('?')],
         Command::Help,
-        &[(KeyCode::Char('?'), NONE)],
-        "?",
-        "help",
-        EVERYWHERE,
-        true,
+        "this help",
+        Some(("?", "help")),
     ),
-    binding(
+    bind(
+        Context::Global,
+        &[ch('q'), ctrl('c')],
         Command::Quit,
-        &[
-            (KeyCode::Char('q'), NONE),
-            (KeyCode::Char('c'), KeyModifiers::CONTROL),
-        ],
-        "q",
         "quit",
-        EVERYWHERE,
-        true,
+        None,
+    ),
+    bind(
+        Context::Filter,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "keep the filter",
+        Some(("enter", "apply")),
+    ),
+    bind(
+        Context::Filter,
+        &[code(KeyCode::Esc)],
+        Command::Back,
+        "clear the filter",
+        Some(("esc", "clear")),
+    ),
+    bind(
+        Context::Menu,
+        &[code(KeyCode::Up), ch('k')],
+        Command::Up,
+        "move up",
+        None,
+    ),
+    bind(
+        Context::Menu,
+        &[code(KeyCode::Down), ch('j')],
+        Command::Down,
+        "move down",
+        Some(("↑↓", "select")),
+    ),
+    bind(
+        Context::Menu,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "run",
+        Some(("enter", "run")),
+    ),
+    bind(
+        Context::Menu,
+        &[code(KeyCode::Esc)],
+        Command::Back,
+        "close",
+        Some(("esc", "close")),
+    ),
+    bind(
+        Context::Confirm,
+        &[code(KeyCode::Left), ch('h')],
+        Command::Left,
+        "choose Cancel",
+        Some(("←→", "choose")),
+    ),
+    bind(
+        Context::Confirm,
+        &[code(KeyCode::Right), ch('l')],
+        Command::Right,
+        "choose the action",
+        None,
+    ),
+    bind(
+        Context::Confirm,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "confirm",
+        Some(("enter", "confirm")),
+    ),
+    bind(
+        Context::Confirm,
+        &[code(KeyCode::Esc)],
+        Command::Back,
+        "cancel",
+        Some(("esc", "cancel")),
+    ),
+    bind(
+        Context::Help,
+        &[code(KeyCode::Esc), code(KeyCode::Enter), ch('?'), ch('q')],
+        Command::Back,
+        "close",
+        Some(("esc", "close")),
+    ),
+    bind(
+        Context::Choice,
+        &[code(KeyCode::Up), ch('k')],
+        Command::Up,
+        "move up",
+        None,
+    ),
+    bind(
+        Context::Choice,
+        &[code(KeyCode::Down), ch('j')],
+        Command::Down,
+        "move down",
+        None,
+    ),
+    bind(
+        Context::Choice,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "next",
+        Some(("enter", "next")),
+    ),
+    bind(
+        Context::Choice,
+        &[code(KeyCode::Esc)],
+        Command::Back,
+        "back",
+        Some(("esc", "back")),
+    ),
+    bind(
+        Context::Input,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "next",
+        Some(("enter", "next")),
+    ),
+    bind(
+        Context::Input,
+        &[code(KeyCode::Esc)],
+        Command::Back,
+        "back",
+        Some(("esc", "back")),
+    ),
+    bind(
+        Context::Done,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "done",
+        Some(("enter", "done")),
+    ),
+    bind(
+        Context::Done,
+        &[code(KeyCode::Esc)],
+        Command::Back,
+        "cancel",
+        Some(("esc", "cancel")),
+    ),
+    bind(
+        Context::Code,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "continue",
+        Some(("enter", "continue")),
+    ),
+    bind(
+        Context::Code,
+        &[ctrl('y')],
+        Command::Copy,
+        "copy the link",
+        Some(("ctrl-y", "copy link")),
+    ),
+    bind(
+        Context::Code,
+        &[code(KeyCode::Esc)],
+        Command::Back,
+        "back",
+        Some(("esc", "back")),
+    ),
+    bind(
+        Context::Waiting,
+        &[ch('c')],
+        Command::Copy,
+        "copy",
+        Some(("c", "copy")),
+    ),
+    bind(
+        Context::Failed,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "try again",
+        Some(("enter", "try again")),
+    ),
+    bind(
+        Context::Failed,
+        &[code(KeyCode::Esc)],
+        Command::Back,
+        "back",
+        Some(("esc", "back")),
+    ),
+    bind(
+        Context::Waiting,
+        &[code(KeyCode::Esc)],
+        Command::Back,
+        "back",
+        Some(("esc", "back")),
+    ),
+    bind(
+        Context::OneTime,
+        &[ch('c')],
+        Command::Copy,
+        "copy the key",
+        Some(("c", "copy key")),
+    ),
+    bind(
+        Context::OneTime,
+        &[ch('s')],
+        Command::CopySettings,
+        "copy the client settings",
+        Some(("s", "copy settings")),
+    ),
+    bind(
+        Context::OneTime,
+        &[code(KeyCode::Left)],
+        Command::Left,
+        "previous client",
+        None,
+    ),
+    bind(
+        Context::OneTime,
+        &[code(KeyCode::Right)],
+        Command::Right,
+        "next client",
+        Some(("←→", "client")),
+    ),
+    bind(
+        Context::OneTime,
+        &[code(KeyCode::Enter)],
+        Command::Select,
+        "done",
+        Some(("enter", "done")),
     ),
 ];
 
-fn matches(chords: &[Chord], key: &KeyEvent) -> bool {
-    let modifiers = if matches!(key.code, KeyCode::Char(_)) {
-        key.modifiers - KeyModifiers::SHIFT
-    } else {
-        key.modifiers
-    };
-    chords
+fn bindings(context: Context) -> impl Iterator<Item = &'static Binding> {
+    context
+        .chain()
         .iter()
-        .any(|(code, wanted)| *code == key.code && *wanted == modifiers)
+        .flat_map(|link| TABLE.iter().filter(move |binding| binding.context == *link))
 }
 
-pub(crate) fn lookup(screen: Screen, key: &KeyEvent) -> Option<Command> {
-    BINDINGS
+pub(crate) fn lookup(context: Context, event: &KeyEvent) -> Option<Command> {
+    let mut ordered: Vec<&Binding> = bindings(context).collect();
+    ordered.sort_by_key(|binding| specificity(context, binding.context));
+    ordered
+        .into_iter()
+        .find(|binding| binding.keys.iter().any(|key| key.matches(event)))
+        .map(|binding| binding.command)
+}
+
+fn specificity(context: Context, link: Context) -> usize {
+    context
+        .chain()
         .iter()
-        .find(|b| b.screens.contains(&screen) && matches(b.chords, key))
-        .map(|b| b.command)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Nav {
-    Esc,
-    Enter,
-    Tab,
-    BackTab,
-    Up,
-    Down,
-    Left,
-    Right,
-    Other,
-}
-
-pub(crate) fn nav(key: &KeyEvent) -> Nav {
-    let code = key.code;
-    if code == KeyCode::Esc {
-        Nav::Esc
-    } else if code == KeyCode::Enter {
-        Nav::Enter
-    } else if code == KeyCode::Tab {
-        Nav::Tab
-    } else if code == KeyCode::BackTab {
-        Nav::BackTab
-    } else if code == KeyCode::Up {
-        Nav::Up
-    } else if code == KeyCode::Down {
-        Nav::Down
-    } else if code == KeyCode::Left {
-        Nav::Left
-    } else if code == KeyCode::Right {
-        Nav::Right
-    } else {
-        Nav::Other
-    }
-}
-
-pub(crate) fn list_nav(key: &KeyEvent) -> Nav {
-    if key.code == KeyCode::Char('j') {
-        Nav::Down
-    } else if key.code == KeyCode::Char('k') {
-        Nav::Up
-    } else if matches!(key.code, KeyCode::Char(_)) {
-        Nav::Other
-    } else {
-        nav(key)
-    }
-}
-
-pub(crate) fn is_interrupt(key: &KeyEvent) -> bool {
-    key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
-}
-
-pub(crate) fn footer(screen: Screen) -> Vec<(&'static str, &'static str)> {
-    BINDINGS
-        .iter()
-        .filter(|b| b.footer && b.screens.contains(&screen))
-        .map(|b| (b.keys, b.label))
-        .collect()
-}
-
-pub(crate) fn footer_text(screen: Screen) -> String {
-    hints_text(&footer(screen))
-}
-
-pub(crate) fn hints_text(hints: &[(&str, &str)]) -> String {
-    hints
-        .iter()
-        .map(|(keys, label)| format!("{keys} {label}"))
-        .collect::<Vec<_>>()
-        .join("  ")
-}
-
-pub(crate) fn help(screen: Screen) -> Vec<(String, String)> {
-    BINDINGS
-        .iter()
-        .filter(|b| b.screens.contains(&screen) && !b.label.is_empty())
-        .map(|b| {
-            let keys = if b.command == Command::Quit {
-                "q, ctrl-c"
-            } else {
-                b.keys
-            };
-            (keys.to_owned(), b.label.to_owned())
+        .position(|candidate| *candidate == link)
+        .map_or(usize::MAX, |position| match link {
+            Context::List | Context::Find | Context::Global => position + 10,
+            Context::Accounts
+            | Context::Activity
+            | Context::Models
+            | Context::Keys
+            | Context::Filter
+            | Context::Menu
+            | Context::Confirm
+            | Context::Help
+            | Context::Choice
+            | Context::Input
+            | Context::Done
+            | Context::Code
+            | Context::Waiting
+            | Context::Failed
+            | Context::OneTime
+            | Context::Busy
+            | Context::Detail => position,
         })
-        .collect()
+}
+
+pub(crate) fn shortcut(context: Context, command: Command) -> Option<char> {
+    bindings(context)
+        .filter(|binding| binding.command == command)
+        .flat_map(|binding| binding.keys.iter())
+        .find_map(|key| match (key.code, key.mods) {
+            (KeyCode::Char(c), KeyModifiers::NONE) => Some(c),
+            _ => None,
+        })
+}
+
+pub(crate) fn footer(context: Context) -> Vec<(&'static str, &'static str)> {
+    let mut hints: Vec<(&'static str, &'static str)> = Vec::new();
+    for binding in bindings(context) {
+        if let Some(hint) = binding.footer
+            && lookup_first_key(context, binding) == Some(binding.command)
+            && !hints.contains(&hint)
+        {
+            hints.push(hint);
+        }
+    }
+    hints
+}
+
+fn lookup_first_key(context: Context, binding: &Binding) -> Option<Command> {
+    let key = binding.keys.first()?;
+    let event = KeyEvent::new(key.code, key.mods);
+    lookup(context, &event)
+}
+
+pub(crate) fn help(context: Context) -> Vec<(String, &'static str)> {
+    let mut rows: Vec<(String, &'static str)> = Vec::new();
+    let mut seen: Vec<Command> = Vec::new();
+    let mut ordered: Vec<&Binding> = bindings(context).collect();
+    ordered.sort_by_key(|binding| specificity(context, binding.context));
+    for binding in ordered {
+        if binding.label.is_empty() || seen.contains(&binding.command) {
+            continue;
+        }
+        if matches!(binding.command, Command::Goto(_)) {
+            continue;
+        }
+        seen.push(binding.command);
+        let keys: Vec<String> = binding.keys.iter().map(|key| key.name()).collect();
+        rows.push((keys.join(" "), binding.label));
+    }
+    if context.chain().contains(&Context::Global) {
+        rows.push(("1 2 3 4".to_owned(), "go to a screen"));
+    }
+    rows
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const ALL: [Context; 16] = [
+        Context::Accounts,
+        Context::Activity,
+        Context::Models,
+        Context::Keys,
+        Context::Filter,
+        Context::Menu,
+        Context::Confirm,
+        Context::Help,
+        Context::Choice,
+        Context::Input,
+        Context::Done,
+        Context::Code,
+        Context::Waiting,
+        Context::Failed,
+        Context::OneTime,
+        Context::Busy,
+    ];
+
     fn press(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
     #[test]
-    fn accounts_footer_lists_the_account_keys() {
+    fn footers_have_at_most_five_hints() {
+        for context in ALL {
+            assert!(footer(context).len() <= 5, "{context:?}");
+        }
+    }
+
+    #[test]
+    fn every_footer_hint_is_in_the_help() {
+        for context in ALL {
+            let labels: Vec<&str> = help(context).iter().map(|(_, label)| *label).collect();
+            for binding in bindings(context).filter(|b| b.footer.is_some()) {
+                assert!(
+                    labels.contains(&binding.label),
+                    "{context:?} {}",
+                    binding.label
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn footer_keys_run_the_command_they_advertise() {
+        for context in ALL {
+            for binding in bindings(context).filter(|b| b.footer.is_some()) {
+                let key = binding.keys.first().unwrap();
+                let event = KeyEvent::new(key.code, key.mods);
+                let found = lookup(context, &event);
+                assert_eq!(
+                    found,
+                    Some(binding.command),
+                    "{context:?} {}",
+                    binding.label
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn view_footers_show_the_documented_hints() {
+        let hints = |context| -> Vec<&'static str> {
+            footer(context).iter().map(|(key, _)| *key).collect()
+        };
+        assert_eq!(hints(Context::Accounts), ["↑↓", "enter", "a", "/", "?"]);
+        assert_eq!(hints(Context::Activity), ["↑↓", "enter", "end", "/", "?"]);
+        assert_eq!(hints(Context::Keys), ["↑↓", "enter", "a", "c", "?"]);
+    }
+
+    #[test]
+    fn no_key_is_bound_twice_inside_one_context() {
+        for link in ALL
+            .iter()
+            .chain(&[Context::List, Context::Find, Context::Global])
+        {
+            let mut seen: Vec<Key> = Vec::new();
+            for binding in TABLE.iter().filter(|b| b.context == *link) {
+                for key in binding.keys {
+                    assert!(!seen.contains(key), "{link:?} {key:?}");
+                    seen.push(*key);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn view_bindings_shadow_the_shared_list_bindings() {
         assert_eq!(
-            footer_text(Screen::Accounts),
-            "n add  l login  d remove  R refresh  / filter  enter detail  ? help  q quit"
+            lookup(Context::Activity, &press(KeyCode::End)),
+            Some(Command::Bottom)
+        );
+        assert_eq!(
+            lookup(Context::Accounts, &press(KeyCode::Char('a'))),
+            Some(Command::Add)
+        );
+        assert_eq!(
+            lookup(Context::Accounts, &press(KeyCode::Char('j'))),
+            Some(Command::Down)
+        );
+        assert_eq!(
+            lookup(Context::Accounts, &press(KeyCode::Char('q'))),
+            Some(Command::Quit)
         );
     }
 
     #[test]
-    fn keys_footer_names_create_and_revoke() {
+    fn modal_contexts_do_not_inherit_global_keys() {
+        assert_eq!(lookup(Context::Menu, &press(KeyCode::Char('q'))), None);
+        assert_eq!(lookup(Context::Input, &press(KeyCode::Tab)), None);
+        assert_eq!(lookup(Context::Busy, &press(KeyCode::Esc)), None);
+    }
+
+    #[test]
+    fn shift_is_ignored_for_letters_and_back_tab() {
+        let upper = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT);
+        assert_eq!(lookup(Context::Accounts, &upper), Some(Command::Bottom));
+        let back_tab = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
         assert_eq!(
-            footer_text(Screen::Keys),
-            "n create  d revoke  enter setup  ? help  q quit"
+            lookup(Context::Accounts, &back_tab),
+            Some(Command::PrevView)
         );
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(lookup(Context::Accounts, &ctrl_c), Some(Command::Quit));
     }
 
     #[test]
-    fn log_footer_offers_follow() {
-        assert!(footer_text(Screen::Log).contains("G follow"));
+    fn menu_shortcuts_come_from_the_table_and_do_not_collide() {
+        let commands = [
+            Command::Relogin,
+            Command::RefreshUsage,
+            Command::Rename,
+            Command::Remove,
+        ];
+        let letters: Vec<char> = commands
+            .iter()
+            .map(|command| shortcut(Context::Accounts, *command).unwrap())
+            .collect();
+        assert_eq!(letters, ['l', 'r', 'e', 'd']);
     }
 
     #[test]
-    fn digits_switch_screens() {
-        assert_eq!(
-            lookup(Screen::Log, &press(KeyCode::Char('3'))),
-            Some(Command::Goto(Screen::Models))
-        );
-    }
-
-    #[test]
-    fn login_key_only_exists_on_accounts() {
-        assert_eq!(
-            lookup(Screen::Accounts, &press(KeyCode::Char('l'))),
-            Some(Command::Login)
-        );
-        assert_eq!(lookup(Screen::Keys, &press(KeyCode::Char('l'))), None);
-    }
-
-    #[test]
-    fn shifted_letters_match_their_chord() {
-        let key = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT);
-        assert_eq!(lookup(Screen::Log, &key), Some(Command::Bottom));
-    }
-
-    #[test]
-    fn ctrl_c_quits() {
-        let key = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        assert_eq!(lookup(Screen::Keys, &key), Some(Command::Quit));
-        assert!(is_interrupt(&key));
-    }
-
-    #[test]
-    fn help_lists_every_labelled_binding_for_the_screen() {
-        let lines = help(Screen::Keys);
+    fn help_lists_view_and_global_keys_once() {
+        let rows = help(Context::Accounts);
         assert!(
-            lines
-                .iter()
-                .any(|(keys, label)| keys == "d" && label == "revoke")
+            rows.iter()
+                .any(|(keys, label)| keys == "a" && *label == "add an account")
         );
-        assert!(lines.iter().all(|(_, label)| !label.is_empty()));
+        assert!(rows.iter().any(|(keys, _)| keys.contains("tab")));
+        let quits = rows.iter().filter(|(_, label)| *label == "quit").count();
+        assert_eq!(quits, 1);
     }
 }

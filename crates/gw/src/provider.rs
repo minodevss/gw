@@ -18,7 +18,7 @@ pub(crate) use error::ProviderError;
 pub(crate) use limit::{Limit, Scope, limit_signal};
 pub(crate) use login::{LoginSession, Prompt, start_login};
 pub(crate) use models::list_models;
-pub(crate) use quota::{Balance, query_balance, query_usage};
+pub(crate) use quota::{Balance, can_query_usage, query_balance, query_usage};
 pub(crate) use refresh::{needs_refresh, refresh};
 pub(crate) use usage::{Usage, Window, usage_from_headers};
 
