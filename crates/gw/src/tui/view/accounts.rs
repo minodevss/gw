@@ -445,10 +445,7 @@ fn status_spans(account: &Account, env: &Env<'_>, theme: Theme) -> Vec<Span<'sta
                 let stale = account
                     .usage_at
                     .is_some_and(|at| clock.now - at > STALE_SECS);
-                let remaining = window
-                    .reset_at
-                    .map(|at| clock.until(at))
-                    .unwrap_or_default();
+                let remaining = window.reset_at.map_or_default(|at| clock.until(at));
                 let [filled, track] = gauge::spans(window.used, BAR_CELLS, stale, theme);
                 vec![
                     filled,
@@ -525,8 +522,7 @@ pub(crate) fn detail_lines(account: &Account, env: &Env<'_>, width: usize) -> Ve
             let [filled, track] = gauge::spans(window.used, BAR_CELLS, stale.is_some(), theme);
             let resets = window
                 .reset_at
-                .map(|at| format!("   resets {}", clock.when(at)))
-                .unwrap_or_default();
+                .map_or_default(|at| format!("   resets {}", clock.when(at)));
             lines.push(Line::from(vec![
                 Span::raw(format!(
                     "  {}",

@@ -370,5 +370,5 @@ fn stream_encoder_stops_after_error() {
     let mut encoder = StreamEncoder::default();
     let body = proto::error::ErrorBody::new(500, proto::error::ErrorKind::Server, "x");
     assert_eq!(encoder.push(&Event::Error(body)).len(), 1);
-    assert!(encoder.finish().is_empty());
+    assert_eq!(encoder.finish(), [] as [bytes::Bytes; 0]);
 }

@@ -122,7 +122,7 @@ pub fn decode_response(body: &[u8]) -> Result<ir::Response, DecodeError> {
         model: wire.model,
         output,
         stop,
-        usage: wire.usage.map(usage_from_wire).unwrap_or_default(),
+        usage: wire.usage.map_or_default(usage_from_wire),
     })
 }
 

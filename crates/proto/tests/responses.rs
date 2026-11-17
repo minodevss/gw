@@ -556,12 +556,7 @@ fn force_stream_is_noted_only_when_it_changes_the_request() {
         stream: true,
         ..request(vec![user("hi")])
     };
-    assert!(
-        encode_request(&streaming, &options)
-            .unwrap()
-            .notes
-            .is_empty()
-    );
+    assert_eq!(encode_request(&streaming, &options).unwrap().notes, []);
 }
 
 #[test]
@@ -1224,19 +1219,18 @@ fn stream_encoder_ignores_events_after_the_terminal_event() {
     for event in sample_events() {
         encoder.push(&event);
     }
-    assert!(!encoder.finish().is_empty());
-    assert!(encoder.finish().is_empty());
-    assert!(
-        encoder
-            .push(&Event::TextDelta {
-                index: 1,
-                text: "x".to_owned()
-            })
-            .is_empty()
+    assert_ne!(encoder.finish(), [] as [Bytes; 0]);
+    assert_eq!(encoder.finish(), [] as [Bytes; 0]);
+    assert_eq!(
+        encoder.push(&Event::TextDelta {
+            index: 1,
+            text: "x".to_owned()
+        }),
+        [] as [Bytes; 0]
     );
 }
 
 #[test]
 fn stream_encoder_is_silent_when_nothing_arrived() {
-    assert!(StreamEncoder::default().finish().is_empty());
+    assert_eq!(StreamEncoder::default().finish(), [] as [Bytes; 0]);
 }

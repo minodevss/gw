@@ -352,7 +352,7 @@ mod tests {
     #[test]
     fn limits_without_a_positive_limit_are_skipped() {
         let body = r#"{"limits":[{"detail":{"limit":0,"used":0}},{"detail":{"name":"x"}}]}"#;
-        assert!(parse_usage(body, NOW).unwrap().windows.is_empty());
+        assert_eq!(parse_usage(body, NOW).unwrap().windows, []);
     }
 
     #[test]
