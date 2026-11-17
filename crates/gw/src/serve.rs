@@ -11,6 +11,7 @@ use proto::Api;
 use proto::error::{ErrorBody, ErrorKind};
 use proto::passthrough::peek;
 use proto::reject::Rejection;
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 
 use crate::account::{Account, State};
@@ -182,17 +183,34 @@ pub(crate) async fn run(home: &Path, listen: &str) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!(listen, "gw listening");
     axum::serve(listener, router)
-        .with_graceful_shutdown(async {
-            if tokio::signal::ctrl_c().await.is_err() {
-                std::future::pending::<()>().await;
-            }
-        })
+        .with_graceful_shutdown(shutdown())
         .await?;
     heartbeat.abort();
     if writer.join().is_err() {
         tracing::warn!("database writer panicked");
     }
     Ok(())
+}
+
+// Containers and service managers stop processes with SIGTERM; terminals send SIGINT.
+async fn shutdown() {
+    let interrupt = async {
+        if tokio::signal::ctrl_c().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
+    let terminate = async {
+        match signal(SignalKind::terminate()) {
+            Ok(mut stream) => {
+                stream.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    tokio::select! {
+        () = interrupt => {}
+        () = terminate => {}
+    }
 }
 
 fn write_loop(db: &Path, mut receiver: mpsc::Receiver<Write>) {
