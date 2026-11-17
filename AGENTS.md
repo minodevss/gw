@@ -27,6 +27,10 @@ cargo fmt --all --check
 
 All four must pass before a commit. Update snapshots with `INSTA_UPDATE=always cargo test -p proto` and inspect the diff before keeping it.
 
+## Releases
+
+Bump `version` in `crates/gw/Cargo.toml`, commit, then push a `v<version>` tag. `.github/workflows/release.yml` checks that the tag matches, publishes the Linux and macOS binaries with checksums and attestations, and pushes the `ghcr.io` image. After editing workflows, run `gh actions-lock` to update `.github/workflows/actions.lock`.
+
 ## Code style
 
 Follow `docs/style/rust.md`. The rules that matter most:

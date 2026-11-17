@@ -27,10 +27,26 @@ pi, …       ─┘                      └─ Ollama, LM Studio, vLLM, any co
 
 ## Install
 
-Requires Rust 1.98 or later.
+**Docker** (Linux, amd64 and arm64). Publish the port only on an address your devices reach, such as a Tailscale IP:
 
 ```sh
-cargo install --path crates/gw
+docker run -d --name gw --restart unless-stopped \
+  -p 100.64.0.2:8787:8787 -v gw:/data ghcr.io/minodevss/gw
+docker exec -it gw gw          # management TUI
+```
+
+**Binary** for Linux (`x86_64` or `aarch64`, static) and macOS (`aarch64`) from [releases](https://github.com/minodevss/gw/releases):
+
+```sh
+curl -fsSLO https://github.com/minodevss/gw/releases/latest/download/gw-x86_64-unknown-linux-musl.tar.gz
+gh attestation verify gw-x86_64-unknown-linux-musl.tar.gz --repo minodevss/gw
+tar -xzf gw-x86_64-unknown-linux-musl.tar.gz gw && install gw ~/.local/bin/
+```
+
+**From source** with Rust 1.98:
+
+```sh
+cargo install --locked --path crates/gw
 ```
 
 ## Quick start
@@ -52,6 +68,30 @@ gw key create macbook                       # prints a client key and ready-to-p
 ```
 
 Paste the printed settings on each device. Nothing is installed on the clients.
+
+In Docker, prefix these with `docker exec -it gw` and give `gw key create` the address clients use, since the container only knows its own: `--url http://100.64.0.2:8787`. Sign-ins that open a page on `127.0.0.1` (`openai --method siwc`) cannot reach a container; use `--method codex` there.
+
+### Running as a service
+
+Without Docker, run gw as a systemd user service so the CLI and the server share `~/.gw`. Save as `~/.config/systemd/user/gw.service`:
+
+```ini
+[Unit]
+Description=gw
+
+[Service]
+ExecStart=%h/.local/bin/gw serve --listen 100.64.0.2:8787
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user enable --now gw
+loginctl enable-linger       # keep it running after you log out
+```
 
 ## Accounts
 
