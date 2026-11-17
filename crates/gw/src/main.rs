@@ -1,4 +1,5 @@
 mod account;
+mod browser;
 mod catalog;
 mod cli;
 mod clock;

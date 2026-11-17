@@ -223,6 +223,9 @@ async fn obtain_secret(home: &Path, kind: Kind) -> anyhow::Result<Secret> {
         return Ok(ops::account::pasted_secret(kind, value, clock::now()));
     }
     let session = ops::account::begin_login(home, &http()?, kind).await?;
+    if crate::browser::open(session.prompt().url()).await {
+        out("opened the sign-in page in your browser");
+    }
     let pasted = match session.prompt() {
         Prompt::PasteCode { url } => {
             out(&format!("open: {url}"));

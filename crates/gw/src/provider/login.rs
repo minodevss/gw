@@ -45,6 +45,17 @@ pub(crate) enum Prompt {
     },
 }
 
+impl Prompt {
+    pub(crate) fn url(&self) -> &str {
+        match self {
+            Self::PasteCode { url } | Self::Loopback { url, .. } => url,
+            Self::Device {
+                verification_uri, ..
+            } => verification_uri,
+        }
+    }
+}
+
 pub(crate) struct LoginSession {
     http: reqwest::Client,
     prompt: Prompt,
