@@ -136,7 +136,7 @@ max_output = 32000
 
 ```
 gw serve --listen <addr>
-gw account add | login | list | show | remove
+gw account add | login | list | show | rename | remove
 gw key create | list | revoke
 gw model refresh | list | show
 gw log [--follow] [--filter "account:x status:429"]

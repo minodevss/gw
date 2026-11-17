@@ -30,6 +30,8 @@ pub(crate) enum AccountCommand {
     List,
     #[command(about = "show one account with recent sessions and errors")]
     Show { name: String },
+    #[command(about = "rename an account; past log rows keep the old name")]
+    Rename { old: String, new: String },
     #[command(about = "remove an account")]
     Remove {
         name: String,
@@ -122,6 +124,11 @@ pub(crate) async fn account(home: &Path, command: AccountCommand) -> anyhow::Res
             for (ts, error) in detail.errors {
                 out(&format!("error {} {error}", clock::format_utc(ts)));
             }
+            Ok(())
+        }
+        AccountCommand::Rename { old, new } => {
+            ops::account::rename(home, &old, &new).await?;
+            out(&format!("{old}: renamed to {new}"));
             Ok(())
         }
         AccountCommand::Remove { name, yes } => {

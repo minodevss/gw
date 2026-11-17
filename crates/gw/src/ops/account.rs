@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context as _, bail};
 
-use super::with_store;
+use super::{name, with_store};
 use crate::account::{Account, Secret, State};
 use crate::clock;
 use crate::provider::{Kind, LoginSession, Method, Provider, start_login};
@@ -128,6 +128,20 @@ pub(crate) async fn find(home: &Path, name: &str) -> anyhow::Result<Account> {
     with_store(home, move |store| store.account(&wanted))
         .await?
         .with_context(|| format!("no account named {name}"))
+}
+
+pub(crate) async fn rename(home: &Path, old: &str, new: &str) -> anyhow::Result<()> {
+    let (from, to) = (old.to_owned(), new.to_owned());
+    let taken: Vec<String> = with_store(home, |store| store.accounts())
+        .await?
+        .into_iter()
+        .map(|a| a.name)
+        .collect();
+    name::check(new, &taken)?;
+    if !with_store(home, move |store| store.rename_account(&from, &to)).await? {
+        bail!("no account named {old}");
+    }
+    Ok(())
 }
 
 pub(crate) async fn remove(home: &Path, name: &str) -> anyhow::Result<()> {

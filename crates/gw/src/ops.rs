@@ -2,6 +2,7 @@ pub(crate) mod account;
 pub(crate) mod key;
 pub(crate) mod log;
 pub(crate) mod model;
+pub(crate) mod name;
 
 use std::path::{Path, PathBuf};
 

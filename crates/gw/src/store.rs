@@ -219,6 +219,26 @@ impl Store {
         Ok(())
     }
 
+    pub(crate) fn rename_account(&mut self, old: &str, new: &str) -> Result<bool> {
+        let tx = self.conn.transaction()?;
+        tx.pragma_update(None, "defer_foreign_keys", "ON")?;
+        let taken: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM accounts WHERE name = ?1)",
+            [new],
+            |row| row.get(0),
+        )?;
+        if taken {
+            return Err(Error::Invalid(format!("account {new} already exists")));
+        }
+        let renamed = tx.execute("UPDATE accounts SET name = ?2 WHERE name = ?1", [old, new])?;
+        tx.execute(
+            "UPDATE catalog SET account = ?2 WHERE account = ?1",
+            [old, new],
+        )?;
+        tx.commit()?;
+        Ok(renamed > 0)
+    }
+
     pub(crate) fn remove_account(&self, name: &str) -> Result<bool> {
         Ok(self
             .conn
@@ -624,5 +644,40 @@ mod tests {
         let rows = store.log_after(0, 2).unwrap();
         let ts: Vec<i64> = rows.iter().map(|r| r.ts).collect();
         assert_eq!(ts, [4, 5]);
+    }
+
+    #[test]
+    fn rename_moves_catalog_and_keeps_log_names() {
+        let mut store = store();
+        store.insert_account(&account("old")).unwrap();
+        store
+            .replace_catalog("old", &[("m".to_owned(), Capabilities::default())], 1)
+            .unwrap();
+        store
+            .insert_log(&LogRow {
+                account: Some("old".to_owned()),
+                ..LogRow::default()
+            })
+            .unwrap();
+        assert!(store.rename_account("old", "new").unwrap());
+        assert!(store.account("new").unwrap().is_some());
+        assert!(store.catalog().unwrap().get("new", "m").is_some());
+        assert_eq!(
+            store
+                .log_after(0, 10)
+                .unwrap()
+                .first()
+                .and_then(|r| r.account.clone()),
+            Some("old".to_owned())
+        );
+    }
+
+    #[test]
+    fn rename_refuses_a_taken_name() {
+        let mut store = store();
+        store.insert_account(&account("a")).unwrap();
+        store.insert_account(&account("b")).unwrap();
+        assert!(store.rename_account("a", "b").is_err());
+        assert!(store.account("a").unwrap().is_some());
     }
 }
