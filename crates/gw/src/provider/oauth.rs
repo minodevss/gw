@@ -162,10 +162,7 @@ fn token_error_excerpt(body: &str) -> String {
     let text = match (field("error"), field("error_description")) {
         (Some(code), Some(description)) => format!("{code}: {description}"),
         (Some(text), None) | (None, Some(text)) => text.to_owned(),
-        (None, None) => value
-            .get("error")
-            .map(ToString::to_string)
-            .unwrap_or_default(),
+        (None, None) => value.get("error").map_or_default(ToString::to_string),
     };
     excerpt(&text)
 }
@@ -295,7 +292,7 @@ mod tests {
         let ProviderError::Status { body_excerpt, .. } = error else {
             panic!("expected status error");
         };
-        assert!(body_excerpt.is_empty());
+        assert_eq!(body_excerpt, "");
     }
 
     #[test]

@@ -328,10 +328,7 @@ impl StreamDecoder {
             } => {
                 let pos = self.open_block(Key::Item { output }, &Block::Reasoning, out);
                 if !self.received(pos) {
-                    let text = content
-                        .as_deref()
-                        .map(join_reasoning_text)
-                        .unwrap_or_default();
+                    let text = content.as_deref().map_or_default(join_reasoning_text);
                     if !text.is_empty() {
                         self.emit_with(pos, out, |index| Event::ReasoningDelta { index, text });
                     }

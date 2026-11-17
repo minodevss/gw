@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn parses_frames_split_across_chunks() {
         let mut parser = Parser::default();
-        assert!(parser.push(b"event: ping\nda").is_empty());
+        assert_eq!(parser.push(b"event: ping\nda"), []);
         let frames = parser.push(b"ta: {}\n\ndata: [DONE]\n\n");
         assert_eq!(
             frames,
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn ignores_comment_only_frames() {
         let mut parser = Parser::default();
-        assert!(parser.push(b": keep-alive\n\n").is_empty());
+        assert_eq!(parser.push(b": keep-alive\n\n"), []);
     }
 
     #[test]

@@ -176,7 +176,7 @@ mod tests {
     async fn loads_an_empty_database() {
         let dir = std::env::temp_dir().join(format!("gw-tui-data-{}", std::process::id()));
         let snapshot = load(&dir).await.unwrap();
-        assert!(snapshot.accounts.is_empty());
+        assert_eq!(snapshot.accounts, []);
         assert_eq!(snapshot.server(), Server::Stopped);
         std::fs::remove_dir_all(dir).unwrap();
     }

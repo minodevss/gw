@@ -1254,8 +1254,11 @@ fn stream_encoder_reports_errors_and_stops() {
     let error = ErrorBody::new(429, ErrorKind::RateLimit, "slow down");
     let frames = encoder.push(&Event::Error(error.clone()));
     assert_eq!(frames, vec![error.sse(proto::Api::Messages)]);
-    assert!(encoder.push(&Event::Stop(StopReason::EndTurn)).is_empty());
-    assert!(encoder.finish().is_empty());
+    assert_eq!(
+        encoder.push(&Event::Stop(StopReason::EndTurn)),
+        [] as [Bytes; 0]
+    );
+    assert_eq!(encoder.finish(), [] as [Bytes; 0]);
 }
 
 #[test]
@@ -1265,7 +1268,7 @@ fn stream_encoder_finish_without_stop_emits_nothing() {
         id: "m".to_owned(),
         model: "x".to_owned(),
     });
-    assert!(encoder.finish().is_empty());
+    assert_eq!(encoder.finish(), [] as [Bytes; 0]);
 }
 
 #[test]

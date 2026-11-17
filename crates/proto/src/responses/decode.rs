@@ -99,7 +99,7 @@ pub fn decode_response(body: &[u8]) -> Result<Response, DecodeError> {
         model: wire.model,
         output,
         stop,
-        usage: wire.usage.as_ref().map(usage).unwrap_or_default(),
+        usage: wire.usage.as_ref().map_or_default(usage),
     })
 }
 
@@ -217,10 +217,7 @@ fn output_items(output: Vec<OutputItem>) -> (Vec<Item>, bool, bool) {
                 encrypted_content,
                 ..
             } => {
-                let text = content
-                    .as_deref()
-                    .map(join_reasoning_text)
-                    .unwrap_or_default();
+                let text = content.as_deref().map_or_default(join_reasoning_text);
                 items.push(Item::Reasoning(Reasoning {
                     text,
                     summary: summary
@@ -523,11 +520,7 @@ fn decode_reasoning_item(item: ReasoningItem) -> Result<Item, Rejection> {
         }
     };
     Ok(Item::Reasoning(Reasoning {
-        text: item
-            .content
-            .as_deref()
-            .map(join_reasoning_text)
-            .unwrap_or_default(),
+        text: item.content.as_deref().map_or_default(join_reasoning_text),
         summary: item
             .summary
             .into_iter()

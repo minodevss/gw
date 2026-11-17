@@ -43,7 +43,7 @@ gh attestation verify gw-x86_64-unknown-linux-musl.tar.gz --repo minodevss/gw
 tar -xzf gw-x86_64-unknown-linux-musl.tar.gz gw && install gw ~/.local/bin/
 ```
 
-**From source** with Rust 1.98:
+**From source** with Rust 1.100:
 
 ```sh
 cargo install --locked --path crates/gw

@@ -187,7 +187,7 @@ fn responses_leading_developer_items_are_not_mid_conversation() {
         {"role": "developer", "content": "a"}, {"role": "system", "content": "b"},
         {"role": "user", "content": "c"}
     ]});
-    assert!(features(Api::Responses, &body).is_empty());
+    assert_eq!(features(Api::Responses, &body), []);
 }
 
 #[test]

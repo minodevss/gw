@@ -2,14 +2,19 @@
 
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.10.0 AS xx
 
-FROM --platform=$BUILDPLATFORM rust:1.98.1-alpine3.24 AS build
+FROM --platform=$BUILDPLATFORM alpine:3.24 AS build
 COPY --from=xx / /
-RUN apk add --no-cache clang lld
+RUN apk add --no-cache clang gcc lld musl-dev rustup
+ENV PATH=/root/.cargo/bin:$PATH
+WORKDIR /src
+# rust-toolchain.toml is the only place that names the Rust version.
+COPY rust-toolchain.toml .
+RUN rustup-init -y --no-modify-path --profile minimal --default-toolchain none \
+    && rustup toolchain install
 ARG TARGETPLATFORM
 RUN xx-apk add --no-cache gcc musl-dev
-WORKDIR /src
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/src/target,id=target-$TARGETPLATFORM \
     xx-cargo build --release --locked --package gw --target-dir target \
     && xx-verify --static target/$(xx-cargo --print-target-triple)/release/gw \

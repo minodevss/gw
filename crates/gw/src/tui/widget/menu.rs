@@ -69,7 +69,7 @@ impl Menu {
             .enumerate()
             .map(|(index, item)| {
                 let marker = " ";
-                let shortcut = item.shortcut.map(String::from).unwrap_or_default();
+                let shortcut = item.shortcut.map_or_default(String::from);
                 let mut label = item.label.clone();
                 if let Some(why) = &item.unavailable {
                     label = format!("{label} ({why})");

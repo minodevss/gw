@@ -697,11 +697,9 @@ mod tests {
                 key: "k".to_owned(),
             },
         );
-        assert!(
-            list_models(&reqwest::Client::new(), &acct)
-                .await
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            list_models(&reqwest::Client::new(), &acct).await.unwrap(),
+            Models::new()
         );
     }
 
