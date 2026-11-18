@@ -179,7 +179,7 @@ pub(super) async fn create(
         Err(error) => return failure(&error),
     };
     if let Err(error) = ops::name::check(&name, &taken) {
-        return invalid(crate::format::capitalize(&error.to_string()));
+        return invalid(format!("Name: {error}"));
     }
     let secret = if kind.provider() == Provider::Custom {
         let url = form.url.trim();
@@ -303,14 +303,7 @@ pub(super) async fn rename(
     let new_name = form.new_name.trim();
     match ops::account::rename(&web.0.home, &name, new_name).await {
         Ok(()) => see_other(&account_path(new_name)),
-        Err(error) => {
-            detail_page(
-                &web,
-                &name,
-                Some(crate::format::capitalize(&format!("{error:#}"))),
-            )
-            .await
-        }
+        Err(error) => detail_page(&web, &name, Some(format!("New name: {error:#}"))).await,
     }
 }
 
