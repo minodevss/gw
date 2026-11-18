@@ -34,8 +34,6 @@ pub(crate) enum Prompt {
     },
     Loopback {
         url: String,
-        port: u16,
-        ssh_hint: String,
     },
     Device {
         verification_uri: String,
@@ -127,11 +125,19 @@ impl LoginSession {
         &self.prompt
     }
 
-    pub(crate) async fn complete(self, pasted: Option<String>) -> Result<Secret, ProviderError> {
+    // `pasted` resolves to what the user pastes, or None when they cannot paste anymore. Paste-code
+    // flows wait for it, loopback flows take whichever comes first of it and the browser callback,
+    // and device flows ignore it.
+    pub(crate) async fn complete(
+        self,
+        pasted: impl Future<Output = Option<String>>,
+    ) -> Result<Secret, ProviderError> {
         let Self { http, flow, .. } = self;
         match flow {
-            Flow::PasteCode(flow) => complete_paste_code(&http, &flow, pasted.as_deref()).await,
-            Flow::Loopback(flow) => complete_loopback(&http, flow).await,
+            Flow::PasteCode(flow) => {
+                complete_paste_code(&http, &flow, pasted.await.as_deref()).await
+            }
+            Flow::Loopback(flow) => complete_loopback(&http, flow, pasted).await,
             Flow::Device(flow) => complete_device(&http, &flow).await,
         }
     }
@@ -192,11 +198,7 @@ async fn start_loopback(
         .append_pair("code_challenge", &pkce.challenge);
     Ok(LoginSession {
         http: http.clone(),
-        prompt: Prompt::Loopback {
-            url: url.into(),
-            port,
-            ssh_hint: format!("ssh -L {port}:127.0.0.1:{port} <server>"),
-        },
+        prompt: Prompt::Loopback { url: url.into() },
         flow: Flow::Loopback(Loopback {
             listener,
             verifier: pkce.verifier,
@@ -325,14 +327,43 @@ enum Callback {
     Ignored,
 }
 
+impl Callback {
+    fn into_outcome(self) -> Option<Result<Authorized, ProviderError>> {
+        match self {
+            Self::Authorized { code, client_id } => Some(Ok(Authorized { code, client_id })),
+            Self::Denied => Some(Err(ProviderError::Cancelled)),
+            Self::Failed(message) => Some(Err(ProviderError::Invalid(message))),
+            Self::Ignored => None,
+        }
+    }
+}
+
 fn parse_callback(request_line: &str, expected_state: &str) -> Callback {
     let mut parts = request_line.split_whitespace();
     let (Some("GET"), Some(target)) = (parts.next(), parts.next()) else {
         return Callback::Ignored;
     };
-    let Ok(url) = Url::parse(&format!("http://127.0.0.1{target}")) else {
-        return Callback::Ignored;
-    };
+    match Url::parse(&format!("http://127.0.0.1{target}")) {
+        Ok(url) => callback(&url, expected_state),
+        Err(_) => Callback::Ignored,
+    }
+}
+
+// The redirect goes to 127.0.0.1 on the machine running the browser. When that is not the gw host
+// the page fails to load, but its address still carries the callback, so the user can paste it.
+fn parse_pasted_callback(pasted: &str, expected_state: &str) -> Result<Authorized, ProviderError> {
+    let url = Url::parse(pasted.trim())
+        .map_err(|_| ProviderError::Invalid("pasted value is not a URL".to_owned()))?;
+    callback(&url, expected_state)
+        .into_outcome()
+        .unwrap_or_else(|| {
+            Err(ProviderError::Invalid(
+                "pasted URL is not the callback of this sign-in".to_owned(),
+            ))
+        })
+}
+
+fn callback(url: &Url, expected_state: &str) -> Callback {
     if url.path() != CALLBACK_PATH {
         return Callback::Ignored;
     }
@@ -402,12 +433,7 @@ async fn handle_connection(
         Callback::Ignored => ("404 Not Found", FAILURE_PAGE),
     };
     respond(&mut stream, status, page).await.unwrap_or_default();
-    match callback {
-        Callback::Authorized { code, client_id } => Some(Ok(Authorized { code, client_id })),
-        Callback::Denied => Some(Err(ProviderError::Cancelled)),
-        Callback::Failed(message) => Some(Err(ProviderError::Invalid(message))),
-        Callback::Ignored => None,
-    }
+    callback.into_outcome()
 }
 
 async fn await_callback(listener: &TcpListener, state: &str) -> Result<Authorized, ProviderError> {
@@ -427,8 +453,18 @@ async fn await_callback(listener: &TcpListener, state: &str) -> Result<Authorize
 async fn complete_loopback(
     http: &reqwest::Client,
     flow: Loopback,
+    pasted: impl Future<Output = Option<String>>,
 ) -> Result<Secret, ProviderError> {
-    let authorized = await_callback(&flow.listener, &flow.state).await?;
+    let pasted = async {
+        match pasted.await {
+            Some(value) => parse_pasted_callback(&value, &flow.state),
+            None => std::future::pending().await,
+        }
+    };
+    let authorized = tokio::select! {
+        result = await_callback(&flow.listener, &flow.state) => result?,
+        result = pasted => result?,
+    };
     drop(flow.listener);
     let client_id = authorized.client_id.ok_or_else(|| {
         ProviderError::Invalid("callback has no client_id; registration incomplete".to_owned())
@@ -595,6 +631,13 @@ mod tests {
             .collect()
     }
 
+    fn callback_port(url: &str) -> u16 {
+        Url::parse(&query(url)["redirect_uri"])
+            .unwrap()
+            .port()
+            .unwrap()
+    }
+
     fn jwt(payload: &str) -> String {
         use base64::Engine as _;
         format!(
@@ -636,6 +679,32 @@ mod tests {
         let line = "GET /auth/callback?error=access_denied&state=s1 HTTP/1.1";
         assert_eq!(parse_callback(line, "s1"), Callback::Denied);
         assert_eq!(parse_callback(line, "other"), Callback::Ignored);
+    }
+
+    #[test]
+    fn pasted_callback_url_is_accepted_and_checked() {
+        let authorized = parse_pasted_callback(
+            " http://127.0.0.1:1455/auth/callback?code=abc&state=s1&client_id=c1 \n",
+            "s1",
+        )
+        .unwrap();
+        assert_eq!(authorized.code, "abc");
+        assert_eq!(authorized.client_id.as_deref(), Some("c1"));
+        assert!(
+            parse_pasted_callback(
+                "http://127.0.0.1:1455/auth/callback?code=abc&state=bad",
+                "s1"
+            )
+            .is_err()
+        );
+        assert!(parse_pasted_callback("abc#s1", "s1").is_err());
+        assert!(matches!(
+            parse_pasted_callback(
+                "http://127.0.0.1:1455/auth/callback?error=access_denied&state=s1",
+                "s1"
+            ),
+            Err(ProviderError::Cancelled)
+        ));
     }
 
     #[test]
@@ -794,11 +863,11 @@ mod tests {
         let verifier = flow.verifier.clone();
 
         let bad = start_paste_code(&http, ANTHROPIC_AUTHORIZE_URL, &token_url).unwrap();
-        let rejected = bad.complete(Some("code#wrong".to_owned())).await;
+        let rejected = bad.complete(async { Some("code#wrong".to_owned()) }).await;
         assert!(matches!(rejected, Err(ProviderError::Invalid(_))));
 
         let secret = session
-            .complete(Some(format!("thecode#{state}")))
+            .complete(async { Some(format!("thecode#{state}")) })
             .await
             .unwrap();
         let Secret::Oauth {
@@ -849,14 +918,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let Prompt::Loopback {
-            url,
-            port,
-            ssh_hint,
-        } = session.prompt().clone()
-        else {
+        let Prompt::Loopback { url } = session.prompt().clone() else {
             panic!("expected loopback prompt");
         };
+        let port = callback_port(&url);
         let params = query(&url);
         assert_eq!(params["client_id"], "dynamic_agent_client");
         assert_eq!(params["ext_agent_host_id"], "urn:uuid:host");
@@ -865,7 +930,6 @@ mod tests {
             params["redirect_uri"],
             format!("http://127.0.0.1:{port}/auth/callback")
         );
-        assert!(ssh_hint.contains(&format!("{port}:127.0.0.1:{port}")));
         let state = params["state"].clone();
 
         let browser = tokio::spawn(async move {
@@ -877,7 +941,7 @@ mod tests {
             .await;
             (stray, ok)
         });
-        let secret = session.complete(None).await.unwrap();
+        let secret = session.complete(async { None }).await.unwrap();
         let (stray, ok) = browser.await.unwrap();
         assert!(stray.starts_with("HTTP/1.1 404"));
         assert!(ok.contains("You can close this tab"));
@@ -895,6 +959,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn loopback_completes_from_a_pasted_address() {
+        let server = FakeServer::start(vec![Reply {
+            status: 200,
+            body: r#"{"access_token":"at","refresh_token":"rt","expires_in":3600}"#.to_owned(),
+        }])
+        .await;
+        let token_url = format!("{}/api/accounts/oauth/token", server.base_url);
+        let session = start_loopback(&reqwest::Client::new(), "h", SIWC_AUTHORIZE_URL, &token_url)
+            .await
+            .unwrap();
+        let Prompt::Loopback { url } = session.prompt().clone() else {
+            panic!("expected loopback prompt");
+        };
+        let pasted = format!(
+            "{}?code=pasted&state={}&client_id=oaiapp_3",
+            query(&url)["redirect_uri"],
+            query(&url)["state"]
+        );
+        let secret = session.complete(async { Some(pasted) }).await.unwrap();
+        let Secret::Oauth { client_id, .. } = secret else {
+            panic!("expected oauth secret");
+        };
+        assert_eq!(client_id.as_deref(), Some("oaiapp_3"));
+        assert!(
+            server
+                .requests()
+                .await
+                .first()
+                .unwrap()
+                .contains("code=pasted")
+        );
+    }
+
+    #[tokio::test]
     async fn loopback_access_denied_cancels() {
         let session = start_loopback(
             &reqwest::Client::new(),
@@ -904,9 +1002,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let Prompt::Loopback { url, port, .. } = session.prompt().clone() else {
+        let Prompt::Loopback { url } = session.prompt().clone() else {
             panic!("expected loopback prompt");
         };
+        let port = callback_port(&url);
         let state = query(&url)["state"].clone();
         let browser = tokio::spawn(async move {
             browser_get(
@@ -915,7 +1014,7 @@ mod tests {
             )
             .await
         });
-        let result = session.complete(None).await;
+        let result = session.complete(async { None }).await;
         browser.await.unwrap();
         assert!(matches!(result, Err(ProviderError::Cancelled)));
     }
@@ -966,7 +1065,7 @@ mod tests {
         assert_eq!(verification_uri, "https://auth.openai.com/codex/device");
         assert_eq!(user_code, "ABCD-1234");
 
-        let secret = session.complete(None).await.unwrap();
+        let secret = session.complete(async { None }).await.unwrap();
         let Secret::Oauth {
             expires_at,
             account_id,

@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Context as _;
 use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::task::{AbortHandle, JoinError, JoinSet};
 
@@ -296,7 +295,6 @@ async fn login(
 ) -> anyhow::Result<Output> {
     let session = ops::account::begin_login(&home, &http, kind).await?;
     let prompt = session.prompt().clone();
-    let needs_code = matches!(prompt, Prompt::PasteCode { .. });
     let opened = crate::browser::open(prompt.url()).await;
     let announce = Action::Job(Box::new(JobDone {
         id,
@@ -306,12 +304,9 @@ async fn login(
     tx.send(announce)
         .await
         .map_err(|_| anyhow::anyhow!("the screen closed"))?;
-    let pasted = if needs_code {
-        Some(code.await.context("sign-in was cancelled")?)
-    } else {
-        None
-    };
-    Ok(Output::Secret(session.complete(pasted).await?))
+    Ok(Output::Secret(
+        session.complete(async { code.await.ok() }).await?,
+    ))
 }
 
 async fn add_account(

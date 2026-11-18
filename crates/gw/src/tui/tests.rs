@@ -1140,17 +1140,27 @@ async fn wizard_paste_code_step_sends_the_code_to_the_login_task() {
 }
 
 #[tokio::test]
-async fn wizard_loopback_step() {
-    let (mut harness, _code) = login_wizard(
+async fn wizard_loopback_step_takes_a_pasted_address() {
+    let (mut harness, code) = login_wizard(
         1,
         0,
         Prompt::Loopback {
             url: "https://auth.openai.com/oauth/authorize?x=1".to_owned(),
-            port: 1455,
-            ssh_hint: "ssh -L 1455:localhost:1455 host".to_owned(),
         },
     );
     insta::assert_snapshot!(harness.render());
+    harness.press(KeyCode::Enter);
+    assert!(harness.render().contains("Paste the address first"));
+    update(
+        &mut harness.app,
+        Action::Paste("http://127.0.0.1:1455/auth/callback?code=c&state=s\n".to_owned()),
+    );
+    harness.press(KeyCode::Enter);
+    assert_eq!(
+        code.await.unwrap(),
+        "http://127.0.0.1:1455/auth/callback?code=c&state=s"
+    );
+    assert!(harness.render().contains("Signing in…"));
 }
 
 #[tokio::test]

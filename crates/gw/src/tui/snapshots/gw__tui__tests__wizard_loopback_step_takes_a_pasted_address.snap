@@ -9,16 +9,16 @@ expression: harness.render()
    claude-max-2   ━─────────   10%  2h 30m
    anthropic-api  pay as you go                      Usage
                                                       5 hours  ━━━━━━━───   72%   resets 15:12
- OpenAI                                               7 days   ━━━───────   31%   resets Wed 14:00
-   chatgpt-pro-1  ━━───┌ Add account ──────────────────────────────────────────────────── 3 / 3 ┐
+ OpenAI                ┌ Add account ──────────────────────────────────────────────────── 3 / 3 ┐0
+   chatgpt-pro-1  ━━───│                                                                        │
+                       │ Open this link and sign in.                                            │
+ Custom                │ If the next page does not load, paste its address here.                │
+   ollama         ready│ If it loads, gw continues by itself.                                   │
                        │                                                                        │
- Custom                │ Open this link in your browser. gw continues by itself.                │
-   ollama         ready│                                                                        │
                        │ https://auth.openai.com/oauth/authorize?x=1                            │
                        │                                                                        │
-                       │ Over SSH, first run: ssh -L 1455:localhost:1455 host                   │
-                       │                                                                        │
-                       │ Waiting for the browser…                                               │
+                       │ Address                                                                │
+                       │ paste the address                                                      │
                        │                                                                        │
                        │                                                                        │
                        │                                                                        │
@@ -31,4 +31,4 @@ expression: harness.render()
 
 
 
- c copy   esc back
+ enter continue   ctrl-y copy link   esc back

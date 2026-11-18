@@ -198,7 +198,7 @@ impl AddAccount {
             Step::Login if self.login_error.is_some() => Context::Failed,
             Step::Login => match &self.session {
                 Some(Session {
-                    prompt: Some(Prompt::PasteCode { .. }),
+                    prompt: Some(Prompt::PasteCode { .. } | Prompt::Loopback { .. }),
                     sent: false,
                     ..
                 }) => Context::Code,
@@ -430,7 +430,13 @@ impl AddAccount {
         }
         let code = self.code.value().trim().to_owned();
         if code.is_empty() {
-            self.code.set_error("Paste the code first");
+            let missing = match self.session.as_ref().and_then(|s| s.prompt.as_ref()) {
+                Some(Prompt::Loopback { .. }) => "Paste the address first",
+                Some(Prompt::PasteCode { .. } | Prompt::Device { .. }) | None => {
+                    "Paste the code first"
+                }
+            };
+            self.code.set_error(missing);
             return Reply::None;
         }
         if let Some(session) = self.session.as_mut() {
@@ -484,6 +490,11 @@ impl AddAccount {
         }
         Ok(match done.result {
             Ok(Output::Prompt { prompt, opened }) => {
+                let placeholder = match prompt {
+                    Prompt::Loopback { .. } => "paste the address",
+                    Prompt::PasteCode { .. } | Prompt::Device { .. } => "paste the code",
+                };
+                self.code = TextField::new().with_placeholder(placeholder);
                 if let Some(session) = self.session.as_mut() {
                     session.prompt = Some(prompt);
                     session.opened = opened;
@@ -567,7 +578,7 @@ impl AddAccount {
         match self.session.as_ref().and_then(|s| s.prompt.as_ref()) {
             None => 8,
             Some(Prompt::Device { .. }) => 13,
-            Some(Prompt::Loopback { .. }) => 14,
+            Some(Prompt::Loopback { url }) => 14 + url_rows(url, 70),
             Some(Prompt::PasteCode { url }) => 12 + url_rows(url, 70),
         }
     }
@@ -698,6 +709,44 @@ impl AddAccount {
         frame.render_widget(Paragraph::new(Line::styled(reveal, Theme::dim())), hint);
     }
 
+    fn render_paste(
+        &self,
+        frame: &mut Frame<'_>,
+        area: Rect,
+        theme: Theme,
+        intro: Vec<Line<'static>>,
+        (url, label): (&str, &'static str),
+    ) {
+        let sent = self.session.as_ref().is_some_and(|session| session.sent);
+        let top = u16::try_from(intro.len()).unwrap_or(u16::MAX);
+        let mut lines = intro;
+        lines.push(Line::raw(""));
+        lines.push(Line::styled(url.to_owned(), theme.accent()));
+        if sent {
+            lines.push(Line::raw(""));
+            lines.push(Line::raw("Signing in…"));
+            text(frame, area, lines);
+            return;
+        }
+        text(frame, area, lines);
+        let used = url_rows(url, area.width);
+        let label_area = Rect {
+            y: area.y + top + 2 + used,
+            height: 1,
+            ..area
+        };
+        frame.render_widget(
+            Paragraph::new(Line::styled(label, Theme::dim())),
+            label_area,
+        );
+        let field = Rect {
+            y: area.y + top + 3 + used,
+            height: 2,
+            ..area
+        };
+        self.code.render(frame, field, theme, true);
+    }
+
     fn render_login(&self, frame: &mut Frame<'_>, area: Rect, theme: Theme, clock: &Clock) {
         if let Some(error) = &self.login_error {
             let lines = vec![
@@ -715,51 +764,24 @@ impl AddAccount {
         match &session.prompt {
             None => text(frame, area, vec![Line::raw("Starting sign-in…")]),
             Some(Prompt::PasteCode { url }) => {
-                let mut lines = vec![
-                    Line::raw(if session.opened {
-                        "Sign in in the browser window that opened, then paste the code you get."
-                    } else {
-                        "Open this link, sign in, then paste the code you get."
-                    }),
-                    Line::raw(""),
-                    Line::styled(url.clone(), theme.accent()),
-                ];
-                let used = url_rows(url, area.width);
-                if session.sent {
-                    lines.push(Line::raw(""));
-                    lines.push(Line::raw("Signing in…"));
-                    text(frame, area, lines);
-                    return;
-                }
-                text(frame, area, lines);
-                let label = Rect {
-                    y: area.y + 3 + used,
-                    height: 1,
-                    ..area
-                };
-                frame.render_widget(Paragraph::new(Line::styled("Code", Theme::dim())), label);
-                let field = Rect {
-                    y: area.y + 4 + used,
-                    height: 2,
-                    ..area
-                };
-                self.code.render(frame, field, theme, true);
+                let intro = vec![Line::raw(if session.opened {
+                    "Sign in in the browser window that opened, then paste the code you get."
+                } else {
+                    "Open this link, sign in, then paste the code you get."
+                })];
+                self.render_paste(frame, area, theme, intro, (url, "Code"));
             }
-            Some(Prompt::Loopback { url, ssh_hint, .. }) => {
-                let lines = vec![
+            Some(Prompt::Loopback { url }) => {
+                let intro = vec![
                     Line::raw(if session.opened {
-                        "Sign in in the browser window that opened. gw continues by itself."
+                        "Sign in in the browser window that opened."
                     } else {
-                        "Open this link in your browser. gw continues by itself."
+                        "Open this link and sign in."
                     }),
-                    Line::raw(""),
-                    Line::styled(url.clone(), theme.accent()),
-                    Line::raw(""),
-                    Line::styled(format!("Over SSH, first run: {ssh_hint}"), Theme::dim()),
-                    Line::raw(""),
-                    Line::raw("Waiting for the browser…"),
+                    Line::raw("If the next page does not load, paste its address here."),
+                    Line::raw("If it loads, gw continues by itself."),
                 ];
-                text(frame, area, lines);
+                self.render_paste(frame, area, theme, intro, (url, "Address"));
             }
             Some(Prompt::Device {
                 verification_uri,
