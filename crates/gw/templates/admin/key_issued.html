@@ -1,0 +1,11 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<h1>Key {{ name }}</h1>
+<p class="warn">This is the only time the key is shown. gw keeps only its hash.</p>
+<pre>{{ key }}</pre>
+{% for snippet in snippets %}
+<h2>{{ snippet.client }}</h2>
+<pre>{{ snippet.text }}</pre>
+{% endfor %}
+<p><a href="/admin/keys">Done</a></p>
+{% endblock %}

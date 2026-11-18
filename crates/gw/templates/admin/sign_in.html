@@ -1,0 +1,15 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<h1>Sign in {{ name }}</h1>
+<p>{{ instruction }}</p>
+<p class="link"><a href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ link }}</a></p>
+{% if let Some(code) = code %}<p class="code">{{ code }}</p>{% endif %}
+{% if let Some(field) = field %}
+<form method="post" action="/admin/logins/{{ id|urlencode_strict }}" class="form">
+  <label for="value">{{ field }}</label>
+  <input id="value" name="value" autocomplete="off" required>
+  <button type="submit">Continue</button>
+</form>
+{% endif %}
+{{ state|safe }}
+{% endblock %}

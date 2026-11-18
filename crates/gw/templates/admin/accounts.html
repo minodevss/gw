@@ -1,7 +1,8 @@
-<section class="live" hx-get="/admin/accounts/live" hx-trigger="every 2s" hx-swap="outerHTML">
+<section class="live" hx-get="/admin/live/accounts" hx-trigger="every 2s" hx-swap="outerHTML">
 {% include "admin/status.html" %}
+<p class="actions"><a class="button" href="/admin/accounts/new">Add account</a></p>
 {% if groups.is_empty() %}
-<p class="empty">No accounts yet. Add one on the server with <code>gw account add</code>.</p>
+<p class="empty">No accounts yet.</p>
 {% endif %}
 {% for group in groups %}
 <h2>{{ group.title }}</h2>
@@ -10,7 +11,7 @@
   <tbody>
   {% for row in group.rows %}
     <tr>
-      <td>{{ row.name }}</td>
+      <td><a href="/admin/account/{{ row.name|urlencode_strict }}">{{ row.name }}</a></td>
       <td>{{ row.kind }}</td>
       <td class="{{ row.tone }}">{{ row.state }}</td>
       <td>

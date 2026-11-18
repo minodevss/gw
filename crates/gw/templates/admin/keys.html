@@ -1,16 +1,18 @@
-<section class="live" hx-get="/admin/keys/live" hx-trigger="every 2s" hx-swap="outerHTML">
+<section class="live" hx-get="/admin/live/keys" hx-trigger="every 2s" hx-swap="outerHTML">
 {% include "admin/status.html" %}
+<p class="actions"><a class="button" href="/admin/keys/new">Create key</a></p>
 {% if rows.is_empty() %}
-<p class="empty">No keys yet. Create one on the server with <code>gw key create &lt;name&gt;</code>.</p>
+<p class="empty">No keys yet.</p>
 {% else %}
 <table>
-  <thead><tr><th>Name</th><th>Created</th><th>Last used</th></tr></thead>
+  <thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead>
   <tbody>
   {% for row in rows %}
     <tr>
       <td>{{ row.name }}</td>
       <td class="dim"><time title="{{ row.created.utc }}">{{ row.created.text }}</time></td>
       <td class="dim"><time title="{{ row.last_used.utc }}">{{ row.last_used.text }}</time></td>
+      <td class="num"><a href="/admin/key/{{ row.name|urlencode_strict }}">Revoke</a></td>
     </tr>
   {% endfor %}
   </tbody>

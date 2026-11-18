@@ -1,4 +1,4 @@
-<section class="live" hx-get="/admin/activity/live" hx-trigger="every 2s" hx-swap="outerHTML">
+<section class="live" hx-get="/admin/live/activity" hx-trigger="every 2s" hx-swap="outerHTML">
 {% include "admin/status.html" %}
 {% if rows.is_empty() %}
 <p class="empty">No requests yet.</p>

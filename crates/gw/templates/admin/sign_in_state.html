@@ -1,0 +1,9 @@
+{% if waiting %}
+<p id="sign-in-state" class="dim" hx-get="/admin/logins/{{ id|urlencode_strict }}/state" hx-trigger="every 2s" hx-swap="outerHTML">{% if sent %}Signing in…{% else %}Waiting for the sign-in…{% endif %}</p>
+{% endif %}
+{% if let Some(message) = done %}
+<p id="sign-in-state" class="ok">{{ message }} <a href="/admin/account/{{ name|urlencode_strict }}">Open {{ name }}</a></p>
+{% endif %}
+{% if let Some(message) = failed %}
+<p id="sign-in-state" class="bad">Sign-in failed: {{ message }} <a href="/admin/accounts">Back to accounts</a></p>
+{% endif %}

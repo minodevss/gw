@@ -1,0 +1,12 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<h1>Add account</h1>
+{% for group in groups %}
+<h2>{{ group.title }}</h2>
+<ul class="choices">
+  {% for option in group.options %}
+  <li><a href="/admin/accounts/new/{{ option.path }}">{{ option.label }}</a> <span class="dim">{{ option.billing }}</span></li>
+  {% endfor %}
+</ul>
+{% endfor %}
+{% endblock %}

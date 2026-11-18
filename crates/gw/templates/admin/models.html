@@ -1,7 +1,8 @@
-<section class="live" hx-get="/admin/models/live" hx-trigger="every 2s" hx-swap="outerHTML">
+<section class="live" hx-get="/admin/live/models" hx-trigger="every 2s" hx-swap="outerHTML">
 {% include "admin/status.html" %}
+<form class="actions" method="post" action="/admin/models/refresh"><button type="submit">Refresh models</button></form>
 {% if rows.is_empty() %}
-<p class="empty">No models yet. Fetch them on the server with <code>gw model refresh</code>.</p>
+<p class="empty">No models yet. Add an account, or refresh the model lists.</p>
 {% else %}
 <table>
   <thead><tr><th>Model</th><th>Next request goes to</th><th class="num">Context</th><th class="num">Max output</th><th>Effort</th><th>Accounts</th></tr></thead>

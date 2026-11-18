@@ -172,6 +172,7 @@ pub(crate) async fn run(home: &Path, listen: &str) -> anyhow::Result<()> {
             }
         }
     });
+    let admin = crate::web::router(home.to_owned(), app.http().clone());
     let router = Router::new()
         .route("/v1/messages", post(messages))
         .route("/v1/messages/count_tokens", post(count_tokens))
@@ -182,7 +183,7 @@ pub(crate) async fn run(home: &Path, listen: &str) -> anyhow::Result<()> {
         .route("/codex/models", get(codex_models))
         .route("/healthz", get(async || "ok"))
         .with_state(app)
-        .nest("/admin", crate::web::router(home.to_owned()));
+        .nest("/admin", admin);
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!(listen, "gw listening");
     axum::serve(listener, router)

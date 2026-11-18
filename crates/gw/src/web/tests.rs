@@ -68,7 +68,10 @@ async fn sign_in(router: &axum::Router, token: &str) -> String {
 }
 
 fn app(home: &Home) -> axum::Router {
-    axum::Router::new().nest("/admin", super::router(home.0.clone()))
+    axum::Router::new().nest(
+        "/admin",
+        super::router(home.0.clone(), reqwest::Client::new()),
+    )
 }
 
 #[tokio::test]
@@ -118,7 +121,7 @@ async fn signing_in_opens_the_pages_and_a_wrong_token_does_not() {
         assert_eq!(page.status(), StatusCode::OK, "{tab}");
         let body = text(page).await;
         assert!(
-            body.contains(&format!("hx-get=\"/admin/{tab}/live\"")),
+            body.contains(&format!("hx-get=\"/admin/live/{tab}\"")),
             "{tab}"
         );
     }
@@ -171,7 +174,7 @@ async fn an_expired_session_on_a_live_refresh_redirects_the_whole_page() {
     home.token(false);
     let response = send(
         &app(&home),
-        get("/admin/accounts/live")
+        get("/admin/live/accounts")
             .header("hx-request", "true")
             .body(Body::empty())
             .unwrap(),
@@ -280,5 +283,223 @@ async fn every_response_carries_the_security_headers() {
     )
     .await;
     assert_eq!(asset.status(), StatusCode::OK);
-    assert_ne!(asset.headers()[header::CACHE_CONTROL], "no-store");
+    assert_eq!(asset.headers()[header::CACHE_CONTROL], "no-cache");
+    let etag = asset.headers()[header::ETAG].to_str().unwrap().to_owned();
+    let again = send(
+        &router,
+        get("/admin/assets/htmx.min.js")
+            .header(header::IF_NONE_MATCH, &etag)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(again.status(), StatusCode::NOT_MODIFIED);
+}
+
+async fn signed_in(name: &str) -> (Home, axum::Router, String) {
+    let home = Home::new(name);
+    let token = home.token(false);
+    let router = app(&home);
+    let cookie = sign_in(&router, &token).await;
+    (home, router, cookie)
+}
+
+async fn post_as(router: &axum::Router, cookie: &str, path: &str, body: &str) -> Response {
+    let mut request = post_form(path, body);
+    request
+        .headers_mut()
+        .insert(header::COOKIE, cookie.parse().unwrap());
+    send(router, request).await
+}
+
+async fn get_as(router: &axum::Router, cookie: &str, path: &str) -> Response {
+    send(
+        router,
+        get(path)
+            .header(header::COOKIE, cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+}
+
+fn accounts(home: &Home) -> Vec<String> {
+    let store = Store::open(&crate::home::database(&home.0).unwrap()).unwrap();
+    store
+        .accounts()
+        .unwrap()
+        .into_iter()
+        .map(|account| account.name)
+        .collect()
+}
+
+#[tokio::test]
+async fn adding_renaming_and_removing_a_custom_account() {
+    let (home, router, cookie) = signed_in("account").await;
+    let form = "name=local&url=http%3A%2F%2F127.0.0.1%3A9&api=chat&secret=";
+
+    let bad = post_as(
+        &router,
+        &cookie,
+        "/admin/accounts/new/custom/custom",
+        "name=bad%20name&url=http%3A%2F%2F127.0.0.1%3A9&api=chat",
+    )
+    .await;
+    assert_eq!(bad.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(text(bad).await.contains("letters, digits"));
+
+    let added = post_as(&router, &cookie, "/admin/accounts/new/custom/custom", form).await;
+    assert_eq!(added.status(), StatusCode::OK);
+    assert!(
+        text(added)
+            .await
+            .contains("Added local, but its model list failed")
+    );
+    assert_eq!(accounts(&home), ["local"]);
+
+    let again = post_as(&router, &cookie, "/admin/accounts/new/custom/custom", form).await;
+    assert_eq!(again.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let page = text(get_as(&router, &cookie, "/admin/account/local").await).await;
+    assert!(page.contains("Type local to remove it"));
+    assert!(!page.contains("Sign in again"));
+
+    let renamed = post_as(
+        &router,
+        &cookie,
+        "/admin/account/local/rename",
+        "new_name=ollama",
+    )
+    .await;
+    assert_eq!(location(&renamed), "/admin/account/ollama");
+    assert_eq!(accounts(&home), ["ollama"]);
+
+    let refused = post_as(
+        &router,
+        &cookie,
+        "/admin/account/ollama/remove",
+        "confirm=nope",
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(accounts(&home), ["ollama"]);
+    let removed = post_as(
+        &router,
+        &cookie,
+        "/admin/account/ollama/remove",
+        "confirm=ollama",
+    )
+    .await;
+    assert_eq!(location(&removed), "/admin/accounts");
+    assert_eq!(accounts(&home), Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn a_paste_code_sign_in_runs_to_its_outcome() {
+    let (home, router, cookie) = signed_in("flow").await;
+    let started = post_as(
+        &router,
+        &cookie,
+        "/admin/accounts/new/anthropic/oauth",
+        "name=claude",
+    )
+    .await;
+    assert_eq!(started.status(), StatusCode::SEE_OTHER);
+    let page_path = location(&started).to_owned();
+    assert!(page_path.starts_with("/admin/logins/"));
+
+    let page = text(get_as(&router, &cookie, &page_path).await).await;
+    assert!(page.contains("https://claude.com/"), "{page}");
+    assert!(page.contains("name=\"value\""));
+    assert!(page.contains("Waiting for the sign-in"));
+
+    let pasted = post_as(&router, &cookie, &page_path, "value=not-a-code").await;
+    assert_eq!(location(&pasted), page_path);
+    let state_path = format!("{page_path}/state");
+    let mut state = String::new();
+    for _ in 0..50 {
+        state = text(get_as(&router, &cookie, &state_path).await).await;
+        if !state.contains("hx-trigger") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(state.contains("Sign-in failed: "), "{state}");
+    assert!(state.contains("code#state"), "{state}");
+    assert_eq!(accounts(&home), Vec::<String>::new());
+    let after = text(get_as(&router, &cookie, &page_path).await).await;
+    assert!(!after.contains("name=\"value\""));
+}
+
+#[tokio::test]
+async fn creating_and_revoking_a_key() {
+    let (home, router, cookie) = signed_in("keys").await;
+    let form = get_as(&router, &cookie, "/admin/keys/new").await;
+    assert_eq!(form.status(), StatusCode::OK);
+
+    let created = post_as(
+        &router,
+        &cookie,
+        "/admin/keys/new",
+        "name=macbook&url=http%3A%2F%2F100.64.0.2%3A8787",
+    )
+    .await;
+    assert_eq!(created.status(), StatusCode::OK);
+    assert_eq!(created.headers()[header::CACHE_CONTROL], "no-store");
+    let page = text(created).await;
+    assert!(page.contains("gw_"));
+    assert!(page.contains("http://100.64.0.2:8787"));
+
+    let duplicate = post_as(
+        &router,
+        &cookie,
+        "/admin/keys/new",
+        "name=macbook&url=http%3A%2F%2Fx",
+    )
+    .await;
+    assert_eq!(duplicate.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let keys = || {
+        let store = Store::open(&crate::home::database(&home.0).unwrap()).unwrap();
+        store.keys().unwrap().len()
+    };
+    assert_eq!(keys(), 1);
+    let refused = post_as(
+        &router,
+        &cookie,
+        "/admin/key/macbook/revoke",
+        "confirm=other",
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let revoked = post_as(
+        &router,
+        &cookie,
+        "/admin/key/macbook/revoke",
+        "confirm=macbook",
+    )
+    .await;
+    assert_eq!(location(&revoked), "/admin/keys");
+    assert_eq!(keys(), 0);
+}
+
+#[tokio::test]
+async fn actions_need_a_session() {
+    let home = Home::new("guarded");
+    home.token(false);
+    let router = app(&home);
+    for path in [
+        "/admin/accounts/new/custom/custom",
+        "/admin/keys/new",
+        "/admin/models/refresh",
+    ] {
+        let response = send(
+            &router,
+            post_form(path, "name=x&url=http%3A%2F%2Fx&api=chat"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "{path}");
+        assert_eq!(location(&response), "/admin/login", "{path}");
+    }
+    assert_eq!(accounts(&home), Vec::<String>::new());
 }
