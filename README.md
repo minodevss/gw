@@ -190,7 +190,11 @@ Running `gw` with no command opens the management TUI. It shows accounts with th
 
 ### Admin web page
 
-Where a terminal is awkward, as in Kubernetes, open `http://<gw address>/admin` in a browser. It shows the same accounts, activity, models and keys as the TUI, refreshed every two seconds, on the same port as the API.
+Where a terminal is awkward, as in Kubernetes, open `http://<gw address>/admin` in a browser. It is on the same port as the API.
+
+- It shows the same accounts, activity, models and keys as the TUI, and refreshes them every two seconds.
+- You can add accounts and sign in to them, rename or remove accounts, refresh usage and model lists, and create or revoke keys.
+- Sign-ins work from any browser, because the page asks for the code or address you get after signing in.
 
 Sign in with the token from `gw admin token` (`docker exec gw gw admin token`, `kubectl exec <pod> -- gw admin token`). The command creates the token on first use and prints the same one after that. `--rotate` replaces it and signs out every browser. Until a token exists the page only explains how to create one.
 

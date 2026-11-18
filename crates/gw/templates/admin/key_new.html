@@ -1,0 +1,13 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<h1>Create key</h1>
+<p class="dim">Make one key per device, so you can revoke a device on its own.</p>
+<form method="post" action="/admin/keys/new" class="form">
+  <label for="name">Name</label>
+  <input id="name" name="name" value="{{ name }}" placeholder="macbook" autocomplete="off" required>
+  <label for="url">Address clients use to reach gw</label>
+  <input id="url" name="url" value="{{ url }}" autocomplete="off" required>
+  {% if let Some(error) = error %}<p class="bad">{{ error }}</p>{% endif %}
+  <button type="submit">Create key</button>
+</form>
+{% endblock %}

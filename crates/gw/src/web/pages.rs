@@ -15,7 +15,7 @@ use crate::store::LogRow;
 const ACTIVITY_ROWS: usize = 200;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Tab {
+pub(super) enum Tab {
     Accounts,
     Activity,
     Models,
@@ -74,10 +74,20 @@ impl Tab {
     }
 }
 
-struct Link {
-    label: &'static str,
-    path: &'static str,
-    current: bool,
+pub(super) struct Link {
+    pub(super) label: &'static str,
+    pub(super) path: &'static str,
+    pub(super) current: bool,
+}
+
+pub(super) fn nav(current: Tab) -> Vec<Link> {
+    TABS.into_iter()
+        .map(|tab| Link {
+            label: tab.label(),
+            path: tab.path(),
+            current: tab == current,
+        })
+        .collect()
 }
 
 #[derive(Template)]
@@ -130,19 +140,19 @@ struct AccountGroup {
     rows: Vec<AccountRow>,
 }
 
-struct AccountRow {
-    name: String,
-    kind: &'static str,
-    state: String,
-    tone: &'static str,
-    windows: Vec<WindowCell>,
-    as_of: Stamp,
+pub(super) struct AccountRow {
+    pub(super) name: String,
+    pub(super) kind: &'static str,
+    pub(super) state: String,
+    pub(super) tone: &'static str,
+    pub(super) windows: Vec<WindowCell>,
+    pub(super) as_of: Stamp,
 }
 
-struct WindowCell {
-    label: String,
-    percent: i64,
-    resets: String,
+pub(super) struct WindowCell {
+    pub(super) label: String,
+    pub(super) percent: i64,
+    pub(super) resets: String,
 }
 
 #[derive(Template)]
@@ -198,13 +208,13 @@ struct KeyRow {
 
 // A relative time for reading at a glance and the exact UTC time on hover; the server's zone says
 // nothing about where the reader is.
-struct Stamp {
-    text: String,
-    utc: String,
+pub(super) struct Stamp {
+    pub(super) text: String,
+    pub(super) utc: String,
 }
 
 impl Stamp {
-    fn ago(at: Option<i64>, now: i64) -> Self {
+    pub(super) fn ago(at: Option<i64>, now: i64) -> Self {
         match at {
             Some(at) => Self {
                 text: format::ago(now - at),
@@ -235,14 +245,7 @@ pub(super) async fn page(State(web): State<Web>, Path(tab): Path<String>) -> Res
             StatusCode::OK,
             &Page {
                 title: tab.label(),
-                tabs: TABS
-                    .into_iter()
-                    .map(|other| Link {
-                        label: other.label(),
-                        path: other.path(),
-                        current: other == tab,
-                    })
-                    .collect(),
+                tabs: nav(tab),
                 live,
             },
         ),
@@ -292,7 +295,7 @@ fn account_groups(snapshot: &Snapshot) -> Vec<AccountGroup> {
         .collect()
 }
 
-fn account_row(account: &Account, now: i64) -> AccountRow {
+pub(super) fn account_row(account: &Account, now: i64) -> AccountRow {
     let (state, tone) = match health(account, now) {
         Health::Ready => ("Ready".to_owned(), "ok"),
         Health::Limited { reset_at, .. } => (

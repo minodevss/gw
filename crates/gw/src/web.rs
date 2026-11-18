@@ -1,4 +1,7 @@
+mod accounts;
 mod auth;
+mod keys;
+mod login;
 mod pages;
 
 use std::collections::HashMap;
@@ -25,18 +28,38 @@ pub(crate) struct Web(Arc<Inner>);
 
 struct Inner {
     home: PathBuf,
+    http: reqwest::Client,
     sessions: Mutex<HashMap<String, auth::Session>>,
+    logins: Mutex<HashMap<String, login::Login>>,
 }
 
-pub(crate) fn router(home: PathBuf) -> Router {
+pub(crate) fn router(home: PathBuf, http: reqwest::Client) -> Router {
     let web = Web(Arc::new(Inner {
         home,
+        http,
         sessions: Mutex::default(),
+        logins: Mutex::default(),
     }));
     let signed_in = Router::new()
         .route("/", get(pages::home))
         .route("/{tab}", get(pages::page))
-        .route("/{tab}/live", get(pages::live))
+        .route("/live/{tab}", get(pages::live))
+        .route("/accounts/new", get(accounts::choose))
+        .route(
+            "/accounts/new/{provider}/{method}",
+            get(accounts::new_form).post(accounts::create),
+        )
+        .route("/account/{name}", get(accounts::detail))
+        .route("/account/{name}/login", post(accounts::sign_in_again))
+        .route("/account/{name}/usage", post(accounts::refresh_usage))
+        .route("/account/{name}/rename", post(accounts::rename))
+        .route("/account/{name}/remove", post(accounts::remove))
+        .route("/models/refresh", post(accounts::refresh_models))
+        .route("/logins/{id}", get(login::page).post(login::paste))
+        .route("/logins/{id}/state", get(login::state))
+        .route("/keys/new", get(keys::new_form).post(keys::create))
+        .route("/key/{name}", get(keys::confirm_revoke))
+        .route("/key/{name}/revoke", post(keys::revoke))
         .route("/logout", post(auth::logout))
         .route_layer(middleware::from_fn_with_state(web.clone(), auth::require));
     Router::new()
@@ -100,18 +123,38 @@ fn cross_origin(method: &Method, headers: &HeaderMap) -> bool {
     origin_host.as_deref() != text(header::HOST)
 }
 
-async fn asset(Path(name): Path<String>) -> Response {
+// Assets change only with a new gw build, but under the same URL. no-cache with an ETag makes the
+// browser check on every load and costs a 304 when nothing changed, so an upgrade never shows a
+// stale stylesheet.
+async fn asset(Path(name): Path<String>, headers: HeaderMap) -> Response {
     let (body, kind) = match name.as_str() {
         "htmx.min.js" => (HTMX, "text/javascript; charset=utf-8"),
         "admin.css" => (CSS, "text/css; charset=utf-8"),
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
+    let etag = format!("\"{}\"", crate::ops::key::hash_bytes(body));
+    let cached = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value == etag);
+    let status = if cached {
+        StatusCode::NOT_MODIFIED
+    } else {
+        StatusCode::OK
+    };
+    let body = if cached {
+        Body::empty()
+    } else {
+        Body::from(body)
+    };
     (
+        status,
         [
-            (header::CONTENT_TYPE, kind),
-            (header::CACHE_CONTROL, "public, max-age=86400"),
+            (header::CONTENT_TYPE, kind.to_owned()),
+            (header::CACHE_CONTROL, "no-cache".to_owned()),
+            (header::ETAG, etag),
         ],
-        Body::from(body),
+        body,
     )
         .into_response()
 }
@@ -131,6 +174,30 @@ fn html(status: StatusCode, page: &impl Template) -> Response {
 fn failure(error: &dyn std::fmt::Display) -> Response {
     tracing::warn!(%error, "admin page failed");
     (StatusCode::INTERNAL_SERVER_ERROR, "admin page failed").into_response()
+}
+
+// The address this browser used to reach gw, which is usually the one clients use too.
+fn origin(headers: &HeaderMap) -> Option<String> {
+    let host = headers.get(header::HOST)?.to_str().ok()?;
+    let proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .filter(|proto| proto.eq_ignore_ascii_case("https"))
+        .map_or("http", |_| "https");
+    Some(format!("{proto}://{host}"))
+}
+
+// Percent-encodes one path segment. Account and key names made through the CLI are not limited
+// to URL-safe characters.
+fn segment(text: &str) -> String {
+    text.bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                char::from(byte).to_string()
+            }
+            other => format!("%{other:02X}"),
+        })
+        .collect()
 }
 
 fn see_other(path: &str) -> Response {

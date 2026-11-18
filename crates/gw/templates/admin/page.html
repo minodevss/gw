@@ -1,14 +1,4 @@
-{% extends "admin/base.html" %}
-{% block title %}{{ title }} · gw{% endblock %}
-{% block body %}
-<header>
-  <strong class="brand">gw</strong>
-  <nav>
-    {% for tab in tabs %}<a href="/admin/{{ tab.path }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}</a>{% endfor %}
-  </nav>
-  <form method="post" action="/admin/logout"><button type="submit" class="quiet">Sign out</button></form>
-</header>
-<main>
+{% extends "admin/frame.html" %}
+{% block content %}
 {{ live|safe }}
-</main>
 {% endblock %}

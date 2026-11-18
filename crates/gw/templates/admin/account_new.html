@@ -1,0 +1,23 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<h1>Add account</h1>
+<p class="dim">{{ heading }}</p>
+<form method="post" action="{{ action }}" class="form">
+  <label for="name">Name</label>
+  <input id="name" name="name" value="{{ name }}" autocomplete="off" required>
+  {% if custom %}
+  <label for="url">Endpoint URL</label>
+  <input id="url" name="url" value="{{ url }}" placeholder="http://localhost:11434" autocomplete="off" required>
+  <label for="api">API</label>
+  <select id="api" name="api">
+    {% for option in apis %}<option value="{{ option }}"{% if *option == api %} selected{% endif %}>{{ option }}</option>{% endfor %}
+  </select>
+  {% endif %}
+  {% if let Some(label) = secret_label %}
+  <label for="secret">{{ label }}</label>
+  <input id="secret" name="secret" type="password" autocomplete="off"{% if !custom %} required{% endif %}>
+  {% endif %}
+  {% if let Some(error) = error %}<p class="bad">{{ error }}</p>{% endif %}
+  <button type="submit">{% if secret_label.is_none() && !custom %}Continue to sign-in{% else %}Add account{% endif %}</button>
+</form>
+{% endblock %}

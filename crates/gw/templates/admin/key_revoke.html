@@ -1,0 +1,11 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<h1>Revoke {{ name }}</h1>
+<p>Clients using this key stop working at once.</p>
+<form method="post" action="/admin/key/{{ name|urlencode_strict }}/revoke" class="form">
+  <label for="confirm">Type {{ name }} to revoke it</label>
+  <input id="confirm" name="confirm" autocomplete="off" required>
+  {% if let Some(error) = error %}<p class="bad">{{ error }}</p>{% endif %}
+  <button type="submit" class="danger">Revoke</button>
+</form>
+{% endblock %}

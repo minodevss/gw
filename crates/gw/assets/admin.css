@@ -166,3 +166,114 @@ button.quiet {
   background: transparent;
   border: 1px solid var(--line);
 }
+
+h1 {
+  font-size: 1.3rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+.actions {
+  margin: 0 0 1rem;
+}
+
+.actions button {
+  margin: 0;
+}
+
+a.button {
+  display: inline-block;
+  padding: 0.45rem 1rem;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 6px;
+  text-decoration: none;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 28rem;
+  margin-bottom: 1.5rem;
+}
+
+.form label {
+  margin: 0.5rem 0 0;
+}
+
+.form p {
+  margin: 0;
+}
+
+.form button {
+  align-self: flex-start;
+}
+
+select {
+  padding: 0.5rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+button.danger {
+  background: var(--bad);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 1rem 2rem;
+}
+
+.cards .form {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.choices,
+.plain {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.choices li,
+.plain li {
+  padding: 0.3rem 0;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1.5rem;
+}
+
+.facts dt {
+  color: var(--dim);
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.code {
+  font: 600 1.6rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.15em;
+}
+
+.link {
+  overflow-wrap: anywhere;
+}
+
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

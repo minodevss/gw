@@ -1,0 +1,58 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<h1>{{ row.name }}</h1>
+<p class="dim">{{ provider }} · {{ row.kind }} · <code>{{ method }}</code> · added <time title="{{ added.utc }}">{{ added.text }}</time></p>
+{% if let Some(error) = error %}<p class="bad">{{ error }}</p>{% endif %}
+<p class="{{ row.tone }}">{{ row.state }}</p>
+{% for window in row.windows %}
+<div class="window">
+  <span>{{ window.label }}</span>
+  <meter min="0" max="100" low="60" high="85" optimum="0" value="{{ window.percent }}"></meter>
+  <span>{{ window.percent }}%</span>
+  <span class="dim">{{ window.resets }}</span>
+</div>
+{% endfor %}
+<dl class="facts">
+  {% for (label, value) in stats %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}
+</dl>
+{% if !errors.is_empty() %}
+<h2>Recent errors</h2>
+<ul class="plain">
+  {% for (at, message) in errors %}<li><time class="dim" title="{{ at.utc }}">{{ at.text }}</time> {{ message }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<h2>Actions</h2>
+<div class="cards">
+  {% match sign_in %}
+  {% when SignIn::Flow %}
+  <form method="post" action="/admin/account/{{ row.name|urlencode_strict }}/login" class="form">
+    <p>Sign in again when the account is signed out or its sign-in has expired.</p>
+    <button type="submit">Sign in again</button>
+  </form>
+  {% when SignIn::Paste with (label) %}
+  <form method="post" action="/admin/account/{{ row.name|urlencode_strict }}/login" class="form">
+    <label for="secret">New {{ label|lower }}</label>
+    <input id="secret" name="secret" type="password" autocomplete="off" required>
+    <button type="submit">Replace</button>
+  </form>
+  {% when SignIn::None %}
+  {% endmatch %}
+  {% if usage %}
+  <form method="post" action="/admin/account/{{ row.name|urlencode_strict }}/usage" class="form">
+    <p>Ask the provider for the current usage.</p>
+    <button type="submit">Refresh usage</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/admin/account/{{ row.name|urlencode_strict }}/rename" class="form">
+    <label for="new_name">New name</label>
+    <input id="new_name" name="new_name" value="{{ row.name }}" autocomplete="off" required>
+    <button type="submit">Rename</button>
+  </form>
+  <form method="post" action="/admin/account/{{ row.name|urlencode_strict }}/remove" class="form">
+    <label for="confirm">Type {{ row.name }} to remove it</label>
+    <input id="confirm" name="confirm" autocomplete="off" required>
+    <button type="submit" class="danger">Remove</button>
+  </form>
+</div>
+{% endblock %}

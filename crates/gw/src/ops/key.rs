@@ -40,7 +40,11 @@ pub(crate) fn create(store: &Store, name: &str, base_url: &str, now: i64) -> Res
 }
 
 pub(crate) fn hash(key: &str) -> String {
-    Sha256::digest(key.as_bytes())
+    hash_bytes(key.as_bytes())
+}
+
+pub(crate) fn hash_bytes(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
         .iter()
         .flat_map(|byte| [byte >> 4, byte & 0x0f])
         .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
