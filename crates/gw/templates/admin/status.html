@@ -1,0 +1,4 @@
+<p class="status">
+  <span class="{% if status.running %}ok{% else %}bad{% endif %}">Server {{ status.server }}</span>
+  {% if !status.attention.is_empty() %}<span class="warn">{{ status.attention }}</span>{% endif %}
+</p>

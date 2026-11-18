@@ -1,0 +1,33 @@
+<section class="live" hx-get="/admin/accounts/live" hx-trigger="every 2s" hx-swap="outerHTML">
+{% include "admin/status.html" %}
+{% if groups.is_empty() %}
+<p class="empty">No accounts yet. Add one on the server with <code>gw account add</code>.</p>
+{% endif %}
+{% for group in groups %}
+<h2>{{ group.title }}</h2>
+<table>
+  <thead><tr><th>Name</th><th>Kind</th><th>State</th><th>Usage</th><th>As of</th></tr></thead>
+  <tbody>
+  {% for row in group.rows %}
+    <tr>
+      <td>{{ row.name }}</td>
+      <td>{{ row.kind }}</td>
+      <td class="{{ row.tone }}">{{ row.state }}</td>
+      <td>
+        {% if row.windows.is_empty() %}<span class="dim">—</span>{% endif %}
+        {% for window in row.windows %}
+        <div class="window">
+          <span>{{ window.label }}</span>
+          <meter min="0" max="100" low="60" high="85" optimum="0" value="{{ window.percent }}"></meter>
+          <span>{{ window.percent }}%</span>
+          <span class="dim">{{ window.resets }}</span>
+        </div>
+        {% endfor %}
+      </td>
+      <td class="dim"><time title="{{ row.as_of.utc }}">{{ row.as_of.text }}</time></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+</section>

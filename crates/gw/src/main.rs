@@ -15,6 +15,7 @@ mod serve;
 mod session;
 mod store;
 mod tui;
+mod web;
 
 use std::io::IsTerminal as _;
 use std::path::PathBuf;

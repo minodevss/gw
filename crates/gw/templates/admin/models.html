@@ -1,0 +1,22 @@
+<section class="live" hx-get="/admin/models/live" hx-trigger="every 2s" hx-swap="outerHTML">
+{% include "admin/status.html" %}
+{% if rows.is_empty() %}
+<p class="empty">No models yet. Fetch them on the server with <code>gw model refresh</code>.</p>
+{% else %}
+<table>
+  <thead><tr><th>Model</th><th>Next request goes to</th><th class="num">Context</th><th class="num">Max output</th><th>Effort</th><th>Accounts</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td>{{ row.id }}</td>
+      <td class="{% if row.blocked %}warn{% endif %}">{{ row.next }}</td>
+      <td class="num">{{ row.context }}</td>
+      <td class="num">{{ row.max_output }}</td>
+      <td>{{ row.efforts }}</td>
+      <td class="dim">{{ row.accounts }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+</section>
