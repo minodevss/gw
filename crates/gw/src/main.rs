@@ -4,6 +4,7 @@ mod catalog;
 mod cli;
 mod clock;
 mod codec;
+mod display;
 mod format;
 mod forward;
 mod home;

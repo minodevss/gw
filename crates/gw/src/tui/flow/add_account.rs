@@ -6,6 +6,7 @@ use url::Url;
 
 use crate::account::{Account, Secret};
 use crate::clock;
+use crate::display::provider_title;
 use crate::format::{self, Clock};
 use crate::ops::snapshot::Snapshot;
 use crate::ops::{self, name};
@@ -14,7 +15,6 @@ use crate::tui::action::{Command, Effect, Reply, Tone};
 use crate::tui::jobs::{JobDone, LoginHandle, Models, Output, Work};
 use crate::tui::keymap::Context;
 use crate::tui::theme::Theme;
-use crate::tui::view::accounts::provider_title;
 use crate::tui::widget::dialog;
 use crate::tui::widget::text_field::TextField;
 

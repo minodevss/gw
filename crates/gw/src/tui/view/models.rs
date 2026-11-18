@@ -2,10 +2,10 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
-use super::accounts::{Health, health};
 use super::{Env, Filter, draw, empty, heading, panes, plural};
 use crate::account::Account;
 use crate::catalog::Capabilities;
+use crate::display::{Health, health};
 use crate::format;
 use crate::ops::snapshot::ModelInfo;
 use crate::provider::Billing;
