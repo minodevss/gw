@@ -46,6 +46,8 @@ enum Command {
     Account(cli::AccountCommand),
     #[command(subcommand, about = "issue and revoke client API keys")]
     Key(cli::KeyCommand),
+    #[command(subcommand, about = "manage access to the admin web page")]
+    Admin(cli::AdminCommand),
     #[command(subcommand, about = "refresh and inspect the model catalog")]
     Model(cli::ModelCommand),
     #[command(about = "show the request log")]
@@ -87,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Serve { listen } => serve::run(&home, &listen).await,
         Command::Account(command) => cli::account(&home, command).await,
         Command::Key(command) => cli::key(&home, command).await,
+        Command::Admin(command) => cli::admin(&home, command).await,
         Command::Model(command) => cli::model(&home, command).await,
         Command::Log { follow, filter } => cli::log(&home, follow, filter.as_deref()).await,
     }
