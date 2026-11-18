@@ -37,7 +37,7 @@ struct Cli {
 enum Command {
     #[command(about = "run the gateway server")]
     Serve {
-        #[arg(long)]
+        #[arg(long, default_value = "127.0.0.1:8787")]
         listen: String,
     },
     #[command(subcommand, about = "register and manage upstream accounts")]

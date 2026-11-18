@@ -180,6 +180,7 @@ pub(crate) async fn run(home: &Path, listen: &str) -> anyhow::Result<()> {
         .route("/v1/models", get(models))
         .route("/v1/models/{id}", get(model))
         .route("/codex/models", get(codex_models))
+        .route("/healthz", get(async || "ok"))
         .with_state(app);
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!(listen, "gw listening");
