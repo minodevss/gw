@@ -346,7 +346,7 @@ async fn adding_renaming_and_removing_a_custom_account() {
     )
     .await;
     assert_eq!(bad.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(text(bad).await.contains("letters, digits"));
+    assert!(text(bad).await.contains("Name: use letters, digits"));
 
     let added = post_as(&router, &cookie, "/admin/accounts/new/custom/custom", form).await;
     assert_eq!(added.status(), StatusCode::OK);

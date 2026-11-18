@@ -77,7 +77,7 @@ pub(super) async fn create(State(web): State<Web>, Form(form): Form<NewForm>) ->
         Err(error) => return failure(&error),
     };
     if let Err(error) = ops::name::check(&name, &taken) {
-        return invalid(crate::format::capitalize(&error.to_string()));
+        return invalid(format!("Name: {error}"));
     }
     if !Url::parse(&url).is_ok_and(|url| matches!(url.scheme(), "http" | "https")) {
         return invalid("Enter the http or https address clients use to reach gw.".to_owned());
