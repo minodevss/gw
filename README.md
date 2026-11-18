@@ -182,10 +182,19 @@ gw account add | login | list | show | rename | remove
 gw key create | list | revoke
 gw model refresh | list | show
 gw log [--follow] [--filter "account:x status:429"]
+gw admin token [--rotate]             # token for the admin web page
 gw                          # management TUI
 ```
 
 Running `gw` with no command opens the management TUI. It shows accounts with their usage windows and reset times, keys, models with per-account support, and a live request log. It runs over SSH and copies with OSC 52.
+
+### Admin web page
+
+Where a terminal is awkward, as in Kubernetes, open `http://<gw address>/admin` in a browser. It shows the same accounts, activity, models and keys as the TUI, refreshed every two seconds, on the same port as the API.
+
+Sign in with the token from `gw admin token` (`docker exec gw gw admin token`, `kubectl exec <pod> -- gw admin token`). The command creates the token on first use and prints the same one after that. `--rotate` replaces it and signs out every browser. Until a token exists the page only explains how to create one.
+
+The page is protected by the token alone. To keep it off the internet while the API is public, block `/admin` at your proxy.
 
 ## Data
 
