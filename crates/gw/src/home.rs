@@ -1,5 +1,5 @@
-use std::fs;
-use std::os::unix::fs::PermissionsExt as _;
+use std::fs::DirBuilder;
+use std::os::unix::fs::DirBuilderExt as _;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn resolve(explicit: Option<PathBuf>) -> PathBuf {
@@ -9,12 +9,37 @@ pub(crate) fn resolve(explicit: Option<PathBuf>) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".gw"))
 }
 
+// Only a directory gw creates gets 0700. An existing one, such as a volume mounted into a container,
+// keeps the permissions its owner gave it: changing them needs ownership, which a non-root process
+// on a root-owned mount does not have.
 pub(crate) fn database(home: &Path) -> std::io::Result<PathBuf> {
-    fs::create_dir_all(home)?;
-    fs::set_permissions(home, fs::Permissions::from_mode(0o700))?;
+    DirBuilder::new().recursive(true).mode(0o700).create(home)?;
     Ok(home.join("gw.db"))
 }
 
 pub(crate) fn overrides(home: &Path) -> PathBuf {
     home.join("catalog.override.toml")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    use super::*;
+
+    #[test]
+    fn creates_a_private_directory_and_leaves_an_existing_one_alone() {
+        let root = std::env::temp_dir().join(format!("gw-home-{}", std::process::id()));
+        let created = root.join("new");
+        database(&created).unwrap();
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&created), 0o700);
+
+        let existing = root.join("existing");
+        std::fs::create_dir_all(&existing).unwrap();
+        std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o750)).unwrap();
+        database(&existing).unwrap();
+        assert_eq!(mode(&existing), 0o750);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
