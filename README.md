@@ -69,7 +69,7 @@ gw key create macbook                       # prints a client key and ready-to-p
 
 Paste the printed settings on each device. Nothing is installed on the clients.
 
-In Docker, prefix these with `docker exec -it gw` and give `gw key create` the address clients use, since the container only knows its own: `--url http://100.64.0.2:8787`. Sign-ins that open a page on `127.0.0.1` (`openai --method siwc`) cannot reach a container; use `--method codex` there.
+In Docker, prefix these with `docker exec -it gw` and give `gw key create` the address clients use, since the container only knows its own: `--url http://100.64.0.2:8787`.
 
 ### Running as a service
 
@@ -110,6 +110,8 @@ loginctl enable-linger       # keep it running after you log out
 | `custom` | | any Messages, Responses or Chat endpoint | subscription |
 
 `--method` is optional on a terminal; gw lists the choices. Keys and tokens are read from a hidden prompt or stdin, never from arguments.
+
+`siwc` sends the browser to `http://127.0.0.1:<port>/auth/callback` after sign-in. When the browser runs on the gw machine, gw picks that up by itself. Otherwise the page fails to load: paste its address into gw instead. This works in Docker too.
 
 ## Clients
 
@@ -175,7 +177,7 @@ max_output = 32000
 ## Management
 
 ```
-gw serve --listen <addr>
+gw serve [--listen <addr>]            # default 127.0.0.1:8787; GET /healthz needs no key
 gw account add | login | list | show | rename | remove
 gw key create | list | revoke
 gw model refresh | list | show

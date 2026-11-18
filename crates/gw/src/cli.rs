@@ -231,11 +231,11 @@ async fn obtain_secret(home: &Path, kind: Kind) -> anyhow::Result<Secret> {
             out(&format!("open: {url}"));
             Some(read_line("code: ")?)
         }
-        Prompt::Loopback { url, ssh_hint, .. } => {
-            out(&format!("on your machine: {ssh_hint}"));
-            out(&format!("then open: {url}"));
-            out("waiting for the browser callback…");
-            None
+        Prompt::Loopback { url } => {
+            out(&format!("open: {url}"));
+            out("after signing in, paste the address of the page the browser lands on.");
+            out("if that page loads, gw continues by itself.");
+            return Ok(session.complete(paste_in_background("address: ")).await?);
         }
         Prompt::Device {
             verification_uri,
@@ -252,9 +252,20 @@ async fn obtain_secret(home: &Path, kind: Kind) -> anyhow::Result<Secret> {
             None
         }
     };
-    Ok(session
-        .complete(pasted.map(|value| value.trim().to_owned()))
-        .await?)
+    let pasted = pasted.map(|value| value.trim().to_owned());
+    Ok(session.complete(async { pasted }).await?)
+}
+
+// Reads on a plain thread so a callback that arrives first is not held up by a pending stdin read:
+// the thread ends with the process.
+fn paste_in_background(prompt: &'static str) -> impl Future<Output = Option<String>> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        if let Ok(line) = read_line(prompt) {
+            sender.send(line.trim().to_owned()).unwrap_or_default();
+        }
+    });
+    async { receiver.await.ok() }
 }
 
 fn read_line(prompt: &str) -> anyhow::Result<String> {
