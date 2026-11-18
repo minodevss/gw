@@ -11,12 +11,22 @@ WORKDIR /src
 COPY rust-toolchain.toml .
 RUN rustup-init -y --no-modify-path --profile minimal --default-toolchain none \
     && rustup toolchain install
+COPY . .
+# Download once, before the build splits per platform, and cache only the parts of the Cargo home
+# that Cargo says to cache: each platform unpacks registry/src on its own.
+# https://github.com/tonistiigi/xx#rust
+# https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
+RUN --mount=type=cache,target=/root/.cargo/registry/index \
+    --mount=type=cache,target=/root/.cargo/registry/cache \
+    --mount=type=cache,target=/root/.cargo/git/db \
+    cargo fetch --locked
 ARG TARGETPLATFORM
 RUN xx-apk add --no-cache gcc musl-dev
-COPY . .
-RUN --mount=type=cache,target=/root/.cargo/registry \
+RUN --mount=type=cache,target=/root/.cargo/registry/index \
+    --mount=type=cache,target=/root/.cargo/registry/cache \
+    --mount=type=cache,target=/root/.cargo/git/db \
     --mount=type=cache,target=/src/target,id=target-$TARGETPLATFORM \
-    xx-cargo build --release --locked --package gw --target-dir target \
+    xx-cargo build --release --locked --offline --package gw --target-dir target \
     && xx-verify --static target/$(xx-cargo --print-target-triple)/release/gw \
     && cp target/$(xx-cargo --print-target-triple)/release/gw /gw \
     && mkdir /data
