@@ -47,9 +47,9 @@ impl Confirm {
     }
 
     pub(crate) fn render(&self, frame: &mut Frame<'_>, area: Rect, theme: Theme) {
-        let body_width = crate::tui::format::width(&self.body).clamp(36, 60);
+        let body_width = crate::format::width(&self.body).clamp(36, 60);
         let width = u16::try_from(body_width + 4).unwrap_or(u16::MAX);
-        let rows = crate::tui::format::wrap(&self.body, body_width).len();
+        let rows = crate::format::wrap(&self.body, body_width).len();
         let height = u16::try_from(rows + 4).unwrap_or(u16::MAX);
         let outer = dialog::centered(area, width, height);
         let inner = dialog::open(frame, outer, &self.title, "");

@@ -59,6 +59,15 @@ pub(crate) enum KeyCommand {
 }
 
 #[derive(Subcommand)]
+pub(crate) enum AdminCommand {
+    #[command(about = "print the admin web token, creating it on first use")]
+    Token {
+        #[arg(long, help = "replace the token and sign out every admin session")]
+        rotate: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub(crate) enum ModelCommand {
     #[command(about = "fetch model lists from upstreams")]
     Refresh {
@@ -321,6 +330,17 @@ fn account_line(account: &Account, now: i64) -> String {
         state,
         windows.join("  ")
     )
+}
+
+pub(crate) async fn admin(home: &Path, command: AdminCommand) -> anyhow::Result<()> {
+    match command {
+        AdminCommand::Token { rotate } => {
+            let token =
+                ops::with_store(home, move |store| ops::admin::token(store, rotate)).await?;
+            out(&token);
+            Ok(())
+        }
+    }
 }
 
 pub(crate) async fn key(home: &Path, command: KeyCommand) -> anyhow::Result<()> {

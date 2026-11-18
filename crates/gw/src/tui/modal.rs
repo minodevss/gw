@@ -5,10 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::action::{Command, Effect, Reply, Tone};
-use super::data::Snapshot;
 use super::flow::add_account::AddAccount;
 use super::flow::new_key::NewKey;
-use super::format::{self, Clock};
 use super::jobs::JobDone;
 use super::keymap::{self, Context};
 use super::theme::Theme;
@@ -16,7 +14,9 @@ use super::widget::confirm::{Choice, Confirm};
 use super::widget::dialog;
 use super::widget::menu::Menu;
 use super::widget::text_field::TextField;
+use crate::format::{self, Clock};
 use crate::ops::name;
+use crate::ops::snapshot::Snapshot;
 
 pub(crate) enum Modal {
     Menu(Menu),

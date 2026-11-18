@@ -1,0 +1,20 @@
+{% extends "admin/base.html" %}
+{% block title %}Sign in · gw{% endblock %}
+{% block body %}
+<main class="narrow">
+  <h1>gw</h1>
+  {% if has_token %}
+  <form method="post" action="/admin/login">
+    <label for="token">Admin token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
+    {% if let Some(error) = error %}<p class="bad">{{ error }}</p>{% endif %}
+    <button type="submit">Sign in</button>
+  </form>
+  <p class="dim">Print it on the server with <code>gw admin token</code>.</p>
+  {% else %}
+  <p>There is no admin token yet. Create one on the server, then reload this page:</p>
+  <pre>gw admin token</pre>
+  <p class="dim">In Docker: <code>docker exec gw gw admin token</code>. In Kubernetes: <code>kubectl exec &lt;pod&gt; -- gw admin token</code>.</p>
+  {% endif %}
+</main>
+{% endblock %}

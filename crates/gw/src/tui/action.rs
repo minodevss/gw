@@ -1,10 +1,10 @@
 use super::App;
-use super::data::Snapshot;
 use super::jobs::{JobDone, Models, Output, Started};
 use super::keymap::Context;
 use super::modal::{Help, Modal};
 use super::view::View;
 use crate::account::Secret;
+use crate::ops::snapshot::Snapshot;
 use crate::provider::Kind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

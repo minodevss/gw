@@ -1,0 +1,19 @@
+<section class="live" hx-get="/admin/keys/live" hx-trigger="every 2s" hx-swap="outerHTML">
+{% include "admin/status.html" %}
+{% if rows.is_empty() %}
+<p class="empty">No keys yet. Create one on the server with <code>gw key create &lt;name&gt;</code>.</p>
+{% else %}
+<table>
+  <thead><tr><th>Name</th><th>Created</th><th>Last used</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td>{{ row.name }}</td>
+      <td class="dim"><time title="{{ row.created.utc }}">{{ row.created.text }}</time></td>
+      <td class="dim"><time title="{{ row.last_used.utc }}">{{ row.last_used.text }}</time></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+</section>

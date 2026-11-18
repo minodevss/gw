@@ -2,15 +2,15 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
-use super::accounts::{Health, health};
 use super::{Env, Filter, draw, empty, heading, panes, plural};
 use crate::account::Account;
 use crate::catalog::Capabilities;
+use crate::display::{Health, health};
+use crate::format;
+use crate::ops::snapshot::ModelInfo;
 use crate::provider::Billing;
 use crate::select::NoCandidate;
 use crate::tui::action::{Command, Effect, Reply};
-use crate::tui::data::ModelInfo;
-use crate::tui::format;
 use crate::tui::keymap::{Context, shortcut};
 use crate::tui::modal::Modal;
 use crate::tui::theme::Theme;
