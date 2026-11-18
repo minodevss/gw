@@ -3,6 +3,7 @@ pub(crate) mod key;
 pub(crate) mod log;
 pub(crate) mod model;
 pub(crate) mod name;
+pub(crate) mod snapshot;
 
 use std::path::{Path, PathBuf};
 

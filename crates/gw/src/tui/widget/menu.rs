@@ -4,8 +4,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::dialog;
+use crate::format;
 use crate::tui::action::Command;
-use crate::tui::format;
 use crate::tui::theme::Theme;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -304,7 +304,7 @@ impl TextField {
         if let Some(error) = &self.error
             && area.height > 1
         {
-            let message = crate::tui::format::truncate(error, width.saturating_sub(2));
+            let message = crate::format::truncate(error, width.saturating_sub(2));
             let line = Line::from(vec![Span::styled(message, theme.error())]);
             let below = Rect {
                 y: area.y + 1,

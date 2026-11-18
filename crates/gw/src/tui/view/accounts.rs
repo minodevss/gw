@@ -7,11 +7,11 @@ use ratatui::text::{Line, Span};
 
 use super::{Env, Filter, draw, empty, heading, panes};
 use crate::account::{Account, State as AccountState};
+use crate::format;
 use crate::provider::{Billing, Kind, Method, Provider, Scope, Usage, Window, can_query_usage};
 use crate::select;
 use crate::tui::action::{Command, Effect, Reply, Tone};
 use crate::tui::flow::add_account::AddAccount;
-use crate::tui::format;
 use crate::tui::keymap::{Context, shortcut};
 use crate::tui::modal::{Modal, Rename};
 use crate::tui::theme::Theme;

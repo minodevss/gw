@@ -3,11 +3,11 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 
 use super::{Env, Filter, draw, empty};
+use crate::format;
 use crate::ops::log::Filter as LogFilter;
 use crate::store::LogRow;
 use crate::tui::action::Effect;
 use crate::tui::action::{Command, Reply, Tone};
-use crate::tui::format;
 use crate::tui::keymap::{Context, shortcut};
 use crate::tui::modal::Modal;
 use crate::tui::theme::Theme;

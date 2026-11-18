@@ -1,7 +1,6 @@
 mod action;
 mod data;
 mod flow;
-mod format;
 mod jobs;
 mod keymap;
 mod modal;
@@ -33,8 +32,6 @@ use ratatui::widgets::{Paragraph, Wrap};
 use tokio::sync::mpsc;
 
 use self::action::{Action, Command, Reply, Tone, update};
-use self::data::{Server, Snapshot};
-use self::format::{Clock, truncate};
 use self::jobs::Jobs;
 use self::keymap::Context;
 use self::modal::Modal;
@@ -42,6 +39,8 @@ use self::theme::Theme;
 use self::view::{Env, Filter, View, accounts, activity, keys, models};
 use self::widget::tabs;
 use crate::clock;
+use crate::format::{self, Clock, truncate};
+use crate::ops::snapshot::{Server, Snapshot};
 
 const TINT: f32 = 0.08;
 const TICK: Duration = Duration::from_millis(250);

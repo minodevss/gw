@@ -9,13 +9,13 @@ use tokio::sync::{mpsc, oneshot};
 use unicode_width::UnicodeWidthStr as _;
 
 use super::action::{Action, Command, Effect};
-use super::data::{KeyInfo, ModelInfo, Snapshot};
 use super::flow::add_account::AddAccount;
 use super::*;
 use crate::account::{Account, Secret, State};
 use crate::catalog::view::ModelView;
 use crate::catalog::{Capabilities, Catalog};
 use crate::ops::key;
+use crate::ops::snapshot::{KeyInfo, ModelInfo, Snapshot};
 use crate::provider::{Kind, Method, Prompt, Provider, Scope, Usage, Window};
 use crate::store::{AccountUse, LogRow, LogSummary};
 use view::View;
@@ -1060,7 +1060,7 @@ async fn account_jobs_rename_and_remove_through_the_store() {
         panic!("expected a finished job");
     };
     assert!(matches!(done.result, Ok(jobs::Output::Renamed { .. })));
-    let snapshot = data::load(&dir).await.unwrap();
+    let snapshot = crate::ops::snapshot::load(&dir).await.unwrap();
     assert_eq!(snapshot.account_names(), vec!["new".to_owned()]);
     jobs.start(Effect::Remove("new".to_owned()));
     let Some(Action::Job(done)) = rx.recv().await else {

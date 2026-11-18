@@ -6,11 +6,11 @@ use url::Url;
 
 use crate::account::{Account, Secret};
 use crate::clock;
+use crate::format::{self, Clock};
+use crate::ops::snapshot::Snapshot;
 use crate::ops::{self, name};
 use crate::provider::{Billing, Kind, Method, Prompt, Provider};
 use crate::tui::action::{Command, Effect, Reply, Tone};
-use crate::tui::data::Snapshot;
-use crate::tui::format::{self, Clock};
 use crate::tui::jobs::{JobDone, LoginHandle, Models, Output, Work};
 use crate::tui::keymap::Context;
 use crate::tui::theme::Theme;

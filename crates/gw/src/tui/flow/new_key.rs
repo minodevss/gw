@@ -4,8 +4,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use crate::ops::name;
+use crate::ops::snapshot::Snapshot;
 use crate::tui::action::{Command, Effect, Reply};
-use crate::tui::data::Snapshot;
 use crate::tui::jobs::{JobDone, Output, Work};
 use crate::tui::keymap::Context;
 use crate::tui::theme::Theme;
@@ -74,7 +74,7 @@ impl NewKey {
                     }
                     Err(error) => {
                         self.name
-                            .set_error(crate::tui::format::capitalize(&error.to_string()));
+                            .set_error(crate::format::capitalize(&error.to_string()));
                         Reply::None
                     }
                 }

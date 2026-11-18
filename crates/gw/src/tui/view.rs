@@ -8,10 +8,10 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::data::Snapshot;
-use super::format::Clock;
 use super::theme::Theme;
 use super::widget::text_field::TextField;
+use crate::format::Clock;
+use crate::ops::snapshot::Snapshot;
 
 const LIST_WIDTH: u16 = 56;
 const GAP: u16 = 2;
