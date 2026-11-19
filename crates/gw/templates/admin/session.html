@@ -1,0 +1,22 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<p class="crumb"><a href="/admin/activity">Activity</a></p>
+<div class="head"><h1>Conversation <span class="mono">{{ id }}</span></h1></div>
+<section>
+  <dl class="pairs">{% for (label, value) in facts %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+</section>
+<section>
+  <div class="section-head"><h2>Input per request</h2><span class="meta">A warm cache shows as mostly cache read. A tall cache write means the cache started over.</span></div>
+  {{ chart|safe }}
+</section>
+<section>
+  <div class="section-head"><h2>Requests</h2><span class="meta">Newest first</span><span class="tools"><a href="/admin/activity?q=session:{{ id|urlencode_strict }}">Open in activity</a></span></div>
+  {% if truncated %}<p class="note">Showing the latest 1,000 requests.</p>{% endif %}
+  <div class="scroll"><table class="activity">
+    {% include "admin/activity_head.html" %}
+    <tbody>
+    {% for (moved, line) in lines %}{% include "admin/activity_row.html" %}{% if let Some(moved) = moved %}<tr class="moved"><td></td><td colspan="9" class="warn small">{{ moved }}</td></tr>{% endif %}{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

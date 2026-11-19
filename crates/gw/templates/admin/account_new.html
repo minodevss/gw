@@ -1,23 +1,31 @@
 {% extends "admin/frame.html" %}
 {% block content %}
-<h1>Add account</h1>
-<p class="dim">{{ heading }}</p>
-<form method="post" action="{{ action }}" class="form">
+<p class="crumb"><a href="/admin/accounts">Accounts</a> / <a href="/admin/accounts/new">Add account</a></p>
+<div class="head"><h1>{{ heading }}</h1><span class="sub">{{ hint }}</span></div>
+<form method="post" action="{{ action }}" class="form" novalidate>
+  {% if let Some(error) = error %}{% if error.field == "flow" %}<p class="error" role="alert">{{ error.text }}</p>{% endif %}{% endif %}
   <label for="name">Name</label>
-  <input id="name" name="name" value="{{ name }}" autocomplete="off" required>
+  <input id="name" name="name" value="{{ name }}" autocomplete="off" spellcheck="false" required{% if let Some(error) = error %}{% if error.field == "name" %} aria-invalid="true" aria-describedby="name-error" autofocus{% endif %}{% endif %}>
+  <span class="hint">Shown in logs and the x-gw-account response header.</span>
+  {% if let Some(error) = error %}{% if error.field == "name" %}<p class="error" id="name-error">{{ error.text }}</p>{% endif %}{% endif %}
   {% if custom %}
-  <label for="url">Endpoint URL</label>
-  <input id="url" name="url" value="{{ url }}" placeholder="http://localhost:11434" autocomplete="off" required>
-  <label for="api">API</label>
+  <label for="url">Base URL</label>
+  <input id="url" name="url" value="{{ url }}" placeholder="http://localhost:11434" autocomplete="off" spellcheck="false" inputmode="url" required{% if let Some(error) = error %}{% if error.field == "url" %} aria-invalid="true" aria-describedby="url-error" autofocus{% endif %}{% endif %}>
+  <span class="hint">gw appends /v1/models, /v1/chat/completions and so on.</span>
+  {% if let Some(error) = error %}{% if error.field == "url" %}<p class="error" id="url-error">{{ error.text }}</p>{% endif %}{% endif %}
+  <label for="api">API it speaks</label>
   <select id="api" name="api">
-    {% for option in apis %}<option value="{{ option }}"{% if *option == api %} selected{% endif %}>{{ option }}</option>{% endfor %}
+    {% for (value, label) in apis %}<option value="{{ value }}"{% if *value == api %} selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
+  {% if let Some(error) = error %}{% if error.field == "api" %}<p class="error">{{ error.text }}</p>{% endif %}{% endif %}
   {% endif %}
   {% if let Some(label) = secret_label %}
   <label for="secret">{{ label }}</label>
-  <input id="secret" name="secret" type="password" autocomplete="off"{% if !custom %} required{% endif %}>
+  <input id="secret" name="secret" type="password" autocomplete="new-password" spellcheck="false"{% if !custom %} required{% endif %}{% if let Some(error) = error %}{% if error.field == "secret" %} aria-invalid="true" aria-describedby="secret-error" autofocus{% endif %}{% endif %}>
+  <span class="hint">{{ secret_hint }}</span>
+  {% if let Some(error) = error %}{% if error.field == "secret" %}<p class="error" id="secret-error">{{ error.text }}</p>{% endif %}{% endif %}
   {% endif %}
-  {% if let Some(error) = error %}<p class="bad">{{ error }}</p>{% endif %}
-  <button type="submit">{% if secret_label.is_none() && !custom %}Continue to sign-in{% else %}Add account{% endif %}</button>
+  {% if flow %}<p class="hint">The next page gives you a sign-in link. It works from any browser.</p>{% endif %}
+  <button type="submit" class="primary">{% if flow %}Continue to sign-in{% else %}Add account{% endif %}</button>
 </form>
 {% endblock %}

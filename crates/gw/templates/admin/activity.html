@@ -1,25 +1,12 @@
-<section class="live" hx-get="/admin/live/activity" hx-trigger="every 2s" hx-swap="outerHTML">
-{% include "admin/status.html" %}
-{% if rows.is_empty() %}
-<p class="empty">No requests yet.</p>
-{% else %}
-<table>
-  <thead><tr><th>When</th><th>Key</th><th>Model</th><th>Account</th><th>Reason</th><th>Status</th><th class="num">In</th><th class="num">Out</th><th class="num">Took</th></tr></thead>
-  <tbody>
-  {% for row in rows %}
-    <tr>
-      <td class="dim"><time title="{{ row.at.utc }}">{{ row.at.text }}</time></td>
-      <td>{{ row.key }}</td>
-      <td>{{ row.model }}</td>
-      <td>{{ row.account }}</td>
-      <td>{{ row.reason }}</td>
-      <td class="{% if row.failed %}bad{% else %}ok{% endif %}" title="{{ row.error }}">{{ row.status }}</td>
-      <td class="num">{{ row.input }}</td>
-      <td class="num">{{ row.output }}</td>
-      <td class="num">{{ row.took }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-</section>
+{% extends "admin/frame.html" %}
+{% block content %}
+<div class="head"><h1>Activity</h1><span class="sub">Every request, newest first</span></div>
+<form class="filters" method="get" action="/admin/activity" role="search">
+  <label for="q" class="sr">Search requests</label>
+  <input id="q" name="q" class="search" value="{{ q }}" placeholder="Search, or account:x key:y model:z status:429" autocomplete="off" spellcheck="false" data-search>
+  {% if outcome != "all" %}<input type="hidden" name="outcome" value="{{ outcome }}">{% endif %}
+  <button type="submit">Search</button>
+  <span class="seg">{% for choice in outcomes %}<a href="/admin/activity{% if !choice.query.is_empty() %}?{{ choice.query }}{% endif %}"{% if choice.current %} aria-current="true"{% endif %}>{{ choice.label }}</a>{% endfor %}</span>
+</form>
+{{ live|safe }}
+{% endblock %}

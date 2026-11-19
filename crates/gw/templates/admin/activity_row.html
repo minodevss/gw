@@ -1,0 +1,13 @@
+<tr{% if line.error.is_some() %} class="has-sub"{% endif %}>
+  <td class="nowrap"><a href="{{ line.href }}" title="{{ line.at_title }}" class="num">{{ line.at }}</a></td>
+  <td>{{ line.key }}</td>
+  <td class="mono">{{ line.model }}</td>
+  <td class="mono">{{ line.account }}</td>
+  <td class="opt dim">{{ line.why }}</td>
+  <td class="nowrap"><span class="state {{ line.tone }}">{{ line.result }}</span></td>
+  <td class="num">{{ line.input }}</td>
+  <td class="num dim opt">{{ line.cached }}</td>
+  <td class="num">{{ line.output }}</td>
+  <td class="num opt">{{ line.took }}</td>
+</tr>
+{% if let Some(error) = line.error %}<tr class="sub"><td></td><td colspan="9">{{ error }}</td></tr>{% endif %}

@@ -1,0 +1,21 @@
+<div id="live"{% if let Some(poll) = poll %} data-live="2" hx-get="{{ poll }}" hx-trigger="gwtick" hx-swap="outerMorph"{% endif %}>
+{% if let Some(newest) = newest %}<p class="note"><a href="{{ newest }}">Back to the newest requests</a></p>{% endif %}
+{% if lines.is_empty() && scanned_out %}
+<div class="empty"><p>No match in the requests searched so far.</p></div>
+<div class="pager">{% if let Some(older) = older %}<a class="button" href="{{ older }}">Search further back</a>{% endif %}</div>
+{% else if lines.is_empty() %}
+<div class="empty">{% if filtered %}<p>No requests match.</p><p>Fields are account, key, model, status, session and reason. Other words search every column, including error text.</p>{% else %}<p>No requests yet.</p><p>Requests show up here as soon as a client sends one with a gw key.</p>{% endif %}</div>
+{% else %}
+<div class="scroll"><table class="activity">
+  {% include "admin/activity_head.html" %}
+  <tbody>
+  {% for line in lines %}{% include "admin/activity_row.html" %}{% endfor %}
+  </tbody>
+</table></div>
+<div class="pager">
+  {% if let Some(older) = older %}<a class="button" href="{{ older }}">Older</a>{% endif %}
+  {% if scanned_out %}<span class="note">Stopped after searching 50,000 requests. Older continues from there.</span>{% endif %}
+  {% if poll.is_some() %}<span class="live-stamp">Live, updated {{ updated }}</span>{% endif %}
+</div>
+{% endif %}
+</div>

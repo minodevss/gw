@@ -1,0 +1,31 @@
+<div class="scroll">
+<table class="accounts" role="table">
+  <caption class="sr">Accounts with their state and usage windows</caption>
+  <thead><tr><th>Account</th><th>State</th><th>Usage</th><th class="opt">Read</th></tr></thead>
+  <tbody>
+  {% for group in groups %}
+    <tr class="group"><th colspan="4" scope="rowgroup">{{ group.title }}
+      {% for pool in group.pools %}<span class="pool">{{ pool.label }}: {{ pool.text }}</span>{% endfor %}
+    </th></tr>
+    {% for row in group.rows %}
+    <tr>
+      <td><a href="{{ row.href }}" class="mono">{{ row.name }}</a><div class="dim small">{{ row.kind }}</div></td>
+      <td><span class="state {{ row.state.tone }}">{{ row.state.text }}</span>
+        {% if let Some(fix) = row.state.fix %}<div><a href="{{ fix.action }}">{{ fix.label }}</a></div>{% endif %}</td>
+      <td>
+        {% if row.windows.is_empty() %}<span class="dim">{% if row.billing == "pay as you go" %}Pay as you go, no usage windows{% else %}No usage reported yet{% endif %}</span>{% endif %}
+        {% if !row.windows.is_empty() %}
+        <div class="windows{% if row.stale %} stale{% endif %}">
+          {% for window in row.windows %}
+          <span class="label{% if window.passed %} dim{% endif %}">{{ window.label }}</span>{{ window.meter|safe }}<span class="num">{{ window.percent }}</span><span class="when">{{ window.when }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </td>
+      <td class="opt nowrap{% if row.stale %} warn{% else %} dim{% endif %}">{% if let Some(read) = row.read %}<time datetime="{{ read.iso }}" title="{{ read.local }}">{{ read.ago }}</time>{% else %}never{% endif %}</td>
+    </tr>
+    {% endfor %}
+  {% endfor %}
+  </tbody>
+</table>
+</div>

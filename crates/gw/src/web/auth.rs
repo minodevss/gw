@@ -1,13 +1,18 @@
+use std::collections::HashMap;
+use std::sync::MutexGuard;
+
 use askama::Template;
 use axum::Form;
-use axum::extract::{Request, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::extract::{Query, Request, State};
+use axum::http::uri::PathAndQuery;
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse as _, Response};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::Deserialize;
 
+use super::frame::Ctx;
 use super::{PREFIX, Web, failure, html, see_other};
 use crate::clock;
 use crate::ops;
@@ -24,13 +29,34 @@ pub(super) struct Session {
 #[derive(Template)]
 #[template(path = "admin/login.html")]
 struct LoginPage {
+    flash: Option<super::frame::Flash>,
     has_token: bool,
     error: Option<&'static str>,
+    next: String,
 }
 
 #[derive(Deserialize)]
 pub(super) struct LoginForm {
     token: String,
+    #[serde(default)]
+    next: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct LoginQuery {
+    #[serde(default)]
+    next: String,
+}
+
+const HOME: &str = "/admin/overview";
+
+fn safe_next(next: &str) -> &str {
+    let inside = next.starts_with("/admin/")
+        && !next.starts_with("/admin/login")
+        && !next.contains("//")
+        && !next.contains('\\')
+        && next.chars().all(|c| c.is_ascii_graphic());
+    if inside { next } else { HOME }
 }
 
 pub(super) async fn require(State(web): State<Web>, request: Request, next: Next) -> Response {
@@ -51,20 +77,48 @@ pub(super) async fn require(State(web): State<Web>, request: Request, next: Next
     if request.headers().contains_key("hx-request") {
         return (StatusCode::OK, [("hx-redirect", format!("{PREFIX}/login"))]).into_response();
     }
+    if request.method() == Method::GET {
+        let wanted = format!(
+            "{PREFIX}{}",
+            request
+                .uri()
+                .path_and_query()
+                .map_or("/", PathAndQuery::as_str)
+        );
+        if safe_next(&wanted) != HOME {
+            return see_other(&format!(
+                "/login?next={}",
+                url::form_urlencoded::byte_serialize(wanted.as_bytes()).collect::<String>()
+            ));
+        }
+    }
     see_other("/login")
 }
 
-pub(super) async fn login_page(State(web): State<Web>) -> Response {
-    match current_token(&web).await {
-        Ok(token) => html(
-            StatusCode::OK,
-            &LoginPage {
-                has_token: token.is_some(),
-                error: None,
-            },
-        ),
-        Err(error) => failure(&error),
+pub(super) async fn login_page(
+    State(web): State<Web>,
+    headers: HeaderMap,
+    Query(query): Query<LoginQuery>,
+) -> Response {
+    let token = match current_token(&web).await {
+        Ok(token) => token,
+        Err(error) => return failure(&error),
+    };
+    let next = safe_next(&query.next).to_owned();
+    if let Some(token) = &token
+        && session_id(&headers).is_some_and(|id| web.valid(&id, &hash(token)))
+    {
+        return to(&next);
     }
+    html(
+        StatusCode::OK,
+        &LoginPage {
+            flash: Ctx::from_headers(&headers).flash,
+            has_token: token.is_some(),
+            error: None,
+            next,
+        },
+    )
 }
 
 pub(super) async fn login(
@@ -76,12 +130,15 @@ pub(super) async fn login(
         Ok(token) => token,
         Err(error) => return failure(&error),
     };
+    let next = safe_next(&form.next).to_owned();
     let Some(token) = token else {
         return html(
             StatusCode::OK,
             &LoginPage {
+                flash: None,
                 has_token: false,
                 error: None,
+                next,
             },
         );
     };
@@ -90,8 +147,10 @@ pub(super) async fn login(
         return html(
             StatusCode::UNAUTHORIZED,
             &LoginPage {
+                flash: None,
                 has_token: true,
-                error: Some("That token is not right."),
+                error: Some("That token is not right. Print it again with gw admin token."),
+                next,
             },
         );
     }
@@ -105,7 +164,15 @@ pub(super) async fn login(
         "{COOKIE}={id}; Path={PREFIX}; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECS}{}",
         secure(&headers)
     );
-    with_cookie(see_other("/accounts"), &cookie)
+    with_cookie(to(&next), &cookie)
+}
+
+fn to(location: &str) -> Response {
+    (
+        StatusCode::SEE_OTHER,
+        [(header::LOCATION, location.to_owned())],
+    )
+        .into_response()
 }
 
 pub(super) async fn logout(State(web): State<Web>, headers: HeaderMap) -> Response {
@@ -116,7 +183,10 @@ pub(super) async fn logout(State(web): State<Web>, headers: HeaderMap) -> Respon
         "{COOKIE}=; Path={PREFIX}; HttpOnly; SameSite=Strict; Max-Age=0{}",
         secure(&headers)
     );
-    with_cookie(see_other("/login"), &cookie)
+    super::frame::with_flash(
+        with_cookie(see_other("/login"), &cookie),
+        &super::frame::Flash::done("Signed out."),
+    )
 }
 
 impl Web {
@@ -144,12 +214,8 @@ impl Web {
         self.lock().remove(&hash(id));
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, Session>> {
-        // A panic while holding the lock leaves the map itself intact, so keep using it.
-        self.0
-            .sessions
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    fn lock(&self) -> MutexGuard<'_, HashMap<String, Session>> {
+        super::lock(&self.0.sessions)
     }
 }
 

@@ -80,7 +80,7 @@ async fn without_a_token_every_page_leads_to_the_setup_hint() {
     let router = app(&home);
     let response = send(&router, get("/admin/accounts").body(Body::empty()).unwrap()).await;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&response), "/admin/login");
+    assert_eq!(location(&response), "/admin/login?next=%2Fadmin%2Faccounts");
     let page = text(send(&router, get("/admin/login").body(Body::empty()).unwrap()).await).await;
     assert!(page.contains("gw admin token"));
     assert!(!page.contains("<form"));
@@ -101,7 +101,7 @@ async fn signing_in_opens_the_pages_and_a_wrong_token_does_not() {
         post_form("/admin/login", &format!("token={token}")),
     )
     .await;
-    assert_eq!(location(&response), "/admin/accounts");
+    assert_eq!(location(&response), "/admin/overview");
     let set_cookie = response.headers()[header::SET_COOKIE].to_str().unwrap();
     for part in ["Path=/admin", "HttpOnly", "SameSite=Strict"] {
         assert!(set_cookie.contains(part), "{set_cookie}");
@@ -109,7 +109,9 @@ async fn signing_in_opens_the_pages_and_a_wrong_token_does_not() {
     assert!(!set_cookie.contains("Secure"));
     let cookie = set_cookie.split(';').next().unwrap();
 
-    for tab in ["accounts", "activity", "models", "keys"] {
+    for tab in [
+        "overview", "usage", "traffic", "activity", "accounts", "models", "keys",
+    ] {
         let page = send(
             &router,
             get(&format!("/admin/{tab}"))
@@ -121,7 +123,7 @@ async fn signing_in_opens_the_pages_and_a_wrong_token_does_not() {
         assert_eq!(page.status(), StatusCode::OK, "{tab}");
         let body = text(page).await;
         assert!(
-            body.contains(&format!("hx-get=\"/admin/live/{tab}\"")),
+            body.contains(&format!("hx-get=\"/admin/live/{tab}")),
             "{tab}"
         );
     }
@@ -134,6 +136,11 @@ async fn signing_in_opens_the_pages_and_a_wrong_token_does_not() {
     )
     .await;
     assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    assert!(
+        text(missing)
+            .await
+            .contains("There is no page at this address")
+    );
 }
 
 #[tokio::test]
@@ -323,6 +330,34 @@ async fn get_as(router: &axum::Router, cookie: &str, path: &str) -> Response {
     .await
 }
 
+fn flash_cookie(response: &Response) -> Option<String> {
+    response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .find(|value| value.starts_with("gw_flash=") && !value.contains("Max-Age=0"))
+        .and_then(|value| value.split(';').next())
+        .map(str::to_owned)
+}
+
+async fn follow(router: &axum::Router, cookie: &str, response: &Response) -> String {
+    let cookie = match flash_cookie(response) {
+        Some(flash) => format!("{cookie}; {flash}"),
+        None => cookie.to_owned(),
+    };
+    let landed = get_as(router, &cookie, location(response)).await;
+    assert_eq!(landed.status(), StatusCode::OK);
+    let clears = landed
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .any(|value| value.starts_with("gw_flash=;"));
+    assert_eq!(clears, cookie.contains("gw_flash="));
+    text(landed).await
+}
+
 fn accounts(home: &Home) -> Vec<String> {
     let store = Store::open(&crate::home::database(&home.0).unwrap()).unwrap();
     store
@@ -349,11 +384,11 @@ async fn adding_renaming_and_removing_a_custom_account() {
     assert!(text(bad).await.contains("Name: use letters, digits"));
 
     let added = post_as(&router, &cookie, "/admin/accounts/new/custom/custom", form).await;
-    assert_eq!(added.status(), StatusCode::OK);
+    assert_eq!(location(&added), "/admin/account/local");
+    let page = follow(&router, &cookie, &added).await;
     assert!(
-        text(added)
-            .await
-            .contains("Added local, but its model list failed")
+        page.contains("Added local. Fetching its model list failed"),
+        "{page}"
     );
     assert_eq!(accounts(&home), ["local"]);
 
@@ -361,8 +396,9 @@ async fn adding_renaming_and_removing_a_custom_account() {
     assert_eq!(again.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let page = text(get_as(&router, &cookie, "/admin/account/local").await).await;
-    assert!(page.contains("Type local to remove it"));
+    assert!(page.contains("Type <span class=\"mono\">local</span> to remove it"));
     assert!(!page.contains("Sign in again"));
+    assert!(!page.contains("Added local"), "a flash shows only once");
 
     let renamed = post_as(
         &router,
@@ -372,6 +408,11 @@ async fn adding_renaming_and_removing_a_custom_account() {
     )
     .await;
     assert_eq!(location(&renamed), "/admin/account/ollama");
+    assert!(
+        follow(&router, &cookie, &renamed)
+            .await
+            .contains("Renamed local to ollama.")
+    );
     assert_eq!(accounts(&home), ["ollama"]);
 
     let refused = post_as(
@@ -381,7 +422,12 @@ async fn adding_renaming_and_removing_a_custom_account() {
         "confirm=nope",
     )
     .await;
-    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(location(&refused), "/admin/account/ollama");
+    assert!(
+        follow(&router, &cookie, &refused)
+            .await
+            .contains("Not removed. The name you typed does not match ollama.")
+    );
     assert_eq!(accounts(&home), ["ollama"]);
     let removed = post_as(
         &router,
@@ -391,6 +437,11 @@ async fn adding_renaming_and_removing_a_custom_account() {
     )
     .await;
     assert_eq!(location(&removed), "/admin/accounts");
+    assert!(
+        follow(&router, &cookie, &removed)
+            .await
+            .contains("Removed ollama.")
+    );
     assert_eq!(accounts(&home), Vec::<String>::new());
 }
 
@@ -411,7 +462,8 @@ async fn a_paste_code_sign_in_runs_to_its_outcome() {
     let page = text(get_as(&router, &cookie, &page_path).await).await;
     assert!(page.contains("https://claude.com/"), "{page}");
     assert!(page.contains("name=\"value\""));
-    assert!(page.contains("Waiting for the sign-in"));
+    assert!(page.contains("Waiting for you to finish signing in"));
+    assert!(page.contains("/cancel"));
 
     let pasted = post_as(&router, &cookie, &page_path, "value=not-a-code").await;
     assert_eq!(location(&pasted), page_path);
@@ -426,6 +478,7 @@ async fn a_paste_code_sign_in_runs_to_its_outcome() {
     }
     assert!(state.contains("Sign-in failed: "), "{state}");
     assert!(state.contains("code#state"), "{state}");
+    assert!(state.contains("/retry"), "{state}");
     assert_eq!(accounts(&home), Vec::<String>::new());
     let after = text(get_as(&router, &cookie, &page_path).await).await;
     assert!(!after.contains("name=\"value\""));
@@ -444,11 +497,28 @@ async fn creating_and_revoking_a_key() {
         "name=macbook&url=http%3A%2F%2F100.64.0.2%3A8787",
     )
     .await;
-    assert_eq!(created.status(), StatusCode::OK);
-    assert_eq!(created.headers()[header::CACHE_CONTROL], "no-store");
-    let page = text(created).await;
-    assert!(page.contains("gw_"));
-    assert!(page.contains("http://100.64.0.2:8787"));
+    assert_eq!(created.status(), StatusCode::SEE_OTHER);
+    let issued = location(&created).to_owned();
+    assert!(issued.starts_with("/admin/keys/issued/"), "{issued}");
+    for _ in 0..2 {
+        let shown = get_as(&router, &cookie, &issued).await;
+        assert_eq!(shown.status(), StatusCode::OK);
+        assert_eq!(shown.headers()[header::CACHE_CONTROL], "no-store");
+        let page = text(shown).await;
+        assert!(page.contains("gw_"));
+        assert!(page.contains("http://100.64.0.2:8787"));
+        assert!(page.contains("data-copy=\"key\""));
+    }
+    let saved = post_as(&router, &cookie, &format!("{issued}/done"), "").await;
+    assert_eq!(location(&saved), "/admin/keys");
+    assert!(
+        follow(&router, &cookie, &saved)
+            .await
+            .contains("Created key macbook.")
+    );
+    let gone = get_as(&router, &cookie, &issued).await;
+    assert_eq!(location(&gone), "/admin/keys");
+    assert!(!follow(&router, &cookie, &gone).await.contains("gw_"));
 
     let duplicate = post_as(
         &router,
@@ -481,6 +551,9 @@ async fn creating_and_revoking_a_key() {
     .await;
     assert_eq!(location(&revoked), "/admin/keys");
     assert_eq!(keys(), 0);
+    let page = follow(&router, &cookie, &revoked).await;
+    assert!(page.contains("Revoked macbook."));
+    assert!(page.contains("No keys yet."));
 }
 
 #[tokio::test]
@@ -502,4 +575,332 @@ async fn actions_need_a_session() {
         assert_eq!(location(&response), "/admin/login", "{path}");
     }
     assert_eq!(accounts(&home), Vec::<String>::new());
+}
+
+fn seed(home: &Home) -> i64 {
+    use crate::account::{Account, Secret, State};
+    use crate::provider::{Kind, Method, Provider, Usage, Window};
+    use crate::store::LogRow;
+
+    let mut store = Store::open(&crate::home::database(&home.0).unwrap()).unwrap();
+    let now = crate::clock::now();
+    let day = 86_400;
+    for (index, name) in ["claude-a", "claude-b"].into_iter().enumerate() {
+        store
+            .insert_account(&Account {
+                name: name.to_owned(),
+                kind: Kind::new(Provider::Anthropic, Method::Oauth).unwrap(),
+                secret: Secret::Key {
+                    key: "secret-value".to_owned(),
+                },
+                state: if index == 1 {
+                    State::Inactive {
+                        reason: "refresh failed".to_owned(),
+                    }
+                } else {
+                    State::Active
+                },
+                usage: None,
+                usage_at: None,
+                created_at: now - 30 * day,
+            })
+            .unwrap();
+        if index == 1 {
+            store
+                .set_state(
+                    name,
+                    &State::Inactive {
+                        reason: "refresh failed".to_owned(),
+                    },
+                )
+                .unwrap();
+        }
+        for step in 0..40 {
+            let at = now - 12 * day + step * 7 * 3600;
+            let cycle_reset = now - 5 * day + if at > now - 5 * day { 7 * day } else { 0 };
+            let used = f64::from(u8::try_from(step % 20).unwrap()) / 25.0;
+            let usage = Usage {
+                windows: vec![
+                    Window {
+                        label: "5h".to_owned(),
+                        used: used / 2.0,
+                        reset_at: Some(at + 3 * 3600),
+                    },
+                    Window {
+                        label: "7d".to_owned(),
+                        used,
+                        reset_at: Some(cycle_reset),
+                    },
+                    Window {
+                        label: "7d_fable".to_owned(),
+                        used: used * 1.2,
+                        reset_at: Some(cycle_reset),
+                    },
+                ],
+            };
+            store.set_usage(name, &usage, at).unwrap();
+        }
+    }
+    for step in 0..120 {
+        let limit = step % 17 == 0;
+        let failed = step % 23 == 0;
+        store
+            .insert_log(&LogRow {
+                ts: now - step * 1800,
+                key: Some(if step % 3 == 0 { "desktop" } else { "macbook" }.to_owned()),
+                session: Some(format!("session-{}", step % 4)),
+                api: "messages".to_owned(),
+                model: if step % 2 == 0 {
+                    "claude-opus-5-5"
+                } else {
+                    "claude-fable-5-2"
+                }
+                .to_owned(),
+                account: Some("claude-a".to_owned()),
+                reason: if limit { "limit" } else { "reused" }.to_owned(),
+                status: if limit {
+                    429
+                } else if failed {
+                    529
+                } else {
+                    200
+                },
+                error: failed.then(|| "<b>overloaded</b>".to_owned()),
+                note: None,
+                input: Some(1200 + step),
+                cache_read: Some(40_000 + step * 100),
+                cache_write: Some(if step % 10 == 0 { 30_000 } else { 0 }),
+                output: Some(800),
+                duration_ms: 4000 + step * 37,
+                ..LogRow::default()
+            })
+            .unwrap();
+    }
+    store
+        .insert_key("macbook", "hash-1", now - 40 * day)
+        .unwrap();
+    store
+        .insert_key("old-phone", "hash-2", now - 90 * day)
+        .unwrap();
+    now
+}
+
+#[tokio::test]
+async fn every_page_renders_real_data_in_the_browser_time_zone() {
+    let (home, router, cookie) = signed_in("data").await;
+    seed(&home);
+    let cookie = format!("{cookie}; gw_tz=32400");
+    let pages = [
+        (
+            "/admin/overview",
+            vec![
+                "2 accounts need attention",
+                "claude-b cannot take requests",
+                "Sign in again",
+                "Where the next request goes",
+                "claude-opus-5-5",
+            ],
+        ),
+        (
+            "/admin/usage",
+            vec![
+                "Anthropic capacity left, 7 days",
+                "7 days fable",
+                "counts accounts, not tokens",
+                "Left at the last reading before each reset",
+                "Show data",
+            ],
+        ),
+        (
+            "/admin/usage?provider=anthropic&window=5h&range=2d",
+            vec!["5 hours"],
+        ),
+        (
+            "/admin/traffic",
+            vec!["By key", "desktop", "macbook", "When you work"],
+        ),
+        (
+            "/admin/traffic?range=30d&by=outcome",
+            vec!["limit", "error"],
+        ),
+        (
+            "/admin/activity",
+            vec![
+                "claude-fable-5-2",
+                "529 error",
+                "&#60;b&#62;overloaded",
+                "limit, tried the next account",
+            ],
+        ),
+        ("/admin/activity?outcome=limit", vec!["limit"]),
+        ("/admin/activity?q=key%3Adesktop", vec!["desktop"]),
+        (
+            "/admin/accounts",
+            vec!["claude-a", "Signed out: refresh failed", "7 days fable"],
+        ),
+        (
+            "/admin/account/claude-a",
+            vec![
+                "Usage now",
+                "Recent conversations",
+                "Recent errors",
+                "Remove account",
+            ],
+        ),
+        ("/admin/models", vec!["No models yet"]),
+        (
+            "/admin/keys",
+            vec!["old-phone", "Never used in 90 days", "Revoke"],
+        ),
+        (
+            "/admin/request/1",
+            vec!["Request 1", "session-0", "Cache read"],
+        ),
+        (
+            "/admin/session/session-1",
+            vec!["Conversation", "Input per request", "cache read"],
+        ),
+        (
+            "/admin/key/macbook",
+            vec!["Revoke macbook", "requests in the last 24 hours"],
+        ),
+    ];
+    for (path, wanted) in pages {
+        let response = get_as(&router, &cookie, path).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let body = text(response).await;
+        assert!(body.contains("Times in UTC+09:00"), "{path}");
+        assert!(!body.contains("secret-value"), "{path}");
+        assert!(!body.contains("<b>overloaded"), "{path}");
+        for want in wanted {
+            assert!(body.contains(want), "{path} lacks {want}\n{body}");
+        }
+    }
+    for path in [
+        "/admin/live/overview",
+        "/admin/live/usage?provider=anthropic&window=7d&range=14d",
+        "/admin/live/traffic?range=24h&by=model",
+        "/admin/live/activity",
+        "/admin/live/accounts",
+        "/admin/live/models",
+        "/admin/live/keys",
+    ] {
+        let mut request = get(path)
+            .header(header::COOKIE, &cookie)
+            .body(Body::empty())
+            .unwrap();
+        request
+            .headers_mut()
+            .insert("hx-request", "true".parse().unwrap());
+        let response = send(&router, request).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let body = text(response).await;
+        assert!(body.starts_with("<div id=\"live\""), "{path}");
+        assert!(!body.contains("<html"), "{path}");
+    }
+    let older = text(get_as(&router, &cookie, "/admin/activity").await).await;
+    assert!(older.contains("/admin/activity?before="));
+    let missing = get_as(&router, &cookie, "/admin/request/9999").await;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_sign_in_returns_to_the_page_that_asked_for_it() {
+    let home = Home::new("next");
+    let token = home.token(false);
+    let router = app(&home);
+    let response = send(
+        &router,
+        post_form(
+            "/admin/login",
+            &format!("token={token}&next=%2Fadmin%2Factivity%3Foutcome%3Derror"),
+        ),
+    )
+    .await;
+    assert_eq!(location(&response), "/admin/activity?outcome=error");
+    for evil in [
+        "https%3A%2F%2Fevil.example",
+        "%2F%2Fevil.example",
+        "%2Fadmin%2F%2Fx",
+    ] {
+        let response = send(
+            &router,
+            post_form("/admin/login", &format!("token={token}&next={evil}")),
+        )
+        .await;
+        assert_eq!(location(&response), "/admin/overview", "{evil}");
+    }
+    let cookie = sign_in(&router, &token).await;
+    let again = get_as(&router, &cookie, "/admin/login?next=%2Fadmin%2Fkeys").await;
+    assert_eq!(location(&again), "/admin/keys");
+}
+
+#[tokio::test]
+async fn cancelling_a_sign_in_forgets_it_and_adds_nothing() {
+    let (home, router, cookie) = signed_in("cancel").await;
+    let started = post_as(
+        &router,
+        &cookie,
+        "/admin/accounts/new/anthropic/oauth",
+        "name=claude",
+    )
+    .await;
+    let page_path = location(&started).to_owned();
+    let cancelled = post_as(&router, &cookie, &format!("{page_path}/cancel"), "").await;
+    assert_eq!(location(&cancelled), "/admin/accounts/new");
+    assert!(
+        follow(&router, &cookie, &cancelled)
+            .await
+            .contains("Cancelled the sign-in.")
+    );
+    let state = text(get_as(&router, &cookie, &format!("{page_path}/state")).await).await;
+    assert!(state.contains("no longer running"), "{state}");
+    assert!(!state.contains("hx-trigger"), "{state}");
+    let pasted = post_as(&router, &cookie, &page_path, "value=code%23state").await;
+    assert_eq!(location(&pasted), page_path);
+    let gone = get_as(&router, &cookie, &page_path).await;
+    assert_eq!(location(&gone), "/admin/accounts");
+    assert_eq!(accounts(&home), Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn a_search_with_no_match_nearby_keeps_going_further_back() {
+    let (home, router, cookie) = signed_in("scan").await;
+    {
+        let store = Store::open(&crate::home::database(&home.0).unwrap()).unwrap();
+        for ts in 0..3_500 {
+            store
+                .insert_log(&crate::store::LogRow {
+                    ts,
+                    model: if ts == 10 { "needle" } else { "hay" }.to_owned(),
+                    reason: "new".to_owned(),
+                    status: 200,
+                    ..crate::store::LogRow::default()
+                })
+                .unwrap();
+        }
+    }
+    let page = text(get_as(&router, &cookie, "/admin/activity?q=needle").await).await;
+    assert!(
+        page.contains("No match in the requests searched so far."),
+        "{page}"
+    );
+    let further = page
+        .split("href=\"")
+        .find_map(|part| {
+            part.strip_prefix("/admin/activity?q=needle&#38;before=")
+                .and_then(|rest| rest.split('"').next())
+        })
+        .unwrap()
+        .to_owned();
+    let next = text(
+        get_as(
+            &router,
+            &cookie,
+            &format!("/admin/activity?q=needle&before={further}"),
+        )
+        .await,
+    )
+    .await;
+    assert!(next.contains(">needle<"), "{next}");
 }

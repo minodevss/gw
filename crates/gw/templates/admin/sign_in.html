@@ -1,15 +1,33 @@
 {% extends "admin/frame.html" %}
 {% block content %}
-<h1>Sign in {{ name }}</h1>
-<p>{{ instruction }}</p>
-<p class="link"><a href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ link }}</a></p>
-{% if let Some(code) = code %}<p class="code">{{ code }}</p>{% endif %}
-{% if let Some(field) = field %}
-<form method="post" action="/admin/logins/{{ id|urlencode_strict }}" class="form">
-  <label for="value">{{ field }}</label>
-  <input id="value" name="value" autocomplete="off" required>
-  <button type="submit">Continue</button>
-</form>
+<p class="crumb"><a href="/admin/accounts">Accounts</a></p>
+<div class="head"><h1>Sign in <span class="mono">{{ name }}</span></h1><span class="sub">Started {{ started }}</span></div>
+{% if waiting %}
+<section>
+  <ol class="steps">
+    <li>
+      <p>{{ instruction }}</p>
+      <div class="secret"><pre id="link">{{ link }}</pre><button type="button" data-copy="link">Copy</button><a class="button" href="{{ link }}" target="_blank" rel="noopener noreferrer">Open</a></div>
+    </li>
+    {% if let Some(code) = code %}
+    <li><p>Enter this code when asked:</p><div class="secret"><pre id="code" class="code">{{ code }}</pre><button type="button" data-copy="code">Copy</button></div></li>
+    {% endif %}
+    {% if let Some(field) = field %}
+    <li>
+      <form method="post" action="/admin/logins/{{ id|urlencode_strict }}" class="form">
+        <label for="value">{{ field }}</label>
+        <input id="value" name="value" autocomplete="off" spellcheck="false" required>
+        <button type="submit" class="primary">Continue</button>
+      </form>
+    </li>
+    {% endif %}
+  </ol>
+</section>
 {% endif %}
+<section>
 {{ state|safe }}
+</section>
+{% if waiting %}
+<form method="post" action="/admin/logins/{{ id|urlencode_strict }}/cancel" class="note"><button type="submit" class="quiet">Cancel sign-in</button></form>
+{% endif %}
 {% endblock %}

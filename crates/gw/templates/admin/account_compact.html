@@ -1,0 +1,24 @@
+<div class="scroll">
+<table class="accounts compact" role="table">
+  <caption class="sr">Accounts, with the most used window of each</caption>
+  <thead><tr><th>Account</th><th>State</th><th>Most used window</th></tr></thead>
+  <tbody>
+  {% for group in groups %}
+    <tr class="group"><th colspan="3" scope="rowgroup">{{ group.title }}
+      {% for pool in group.pools %}<span class="pool">{{ pool.label }}: {{ pool.text }}</span>{% endfor %}
+    </th></tr>
+    {% for row in group.rows %}
+    <tr>
+      <td><a href="{{ row.href }}" class="mono">{{ row.name }}</a></td>
+      <td><span class="state {{ row.state.tone }}">{{ row.state.text }}</span>{% if let Some(fix) = row.state.fix %} <a href="{{ fix.action }}">{{ fix.label }}</a>{% endif %}</td>
+      <td>
+        {% if let Some(window) = row.tight_window() %}
+        <div class="windows{% if row.stale %} stale{% endif %}"><span class="label">{{ window.label }}</span>{{ window.meter|safe }}<span class="num">{{ window.percent }}</span><span class="when">{{ window.when }}</span></div>
+        {% else %}<span class="dim">{% if row.billing == "pay as you go" %}Pay as you go{% else if row.windows.is_empty() %}No usage reported yet{% else %}No reading since the last reset{% endif %}</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  {% endfor %}
+  </tbody>
+</table>
+</div>

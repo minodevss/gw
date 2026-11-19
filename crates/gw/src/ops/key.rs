@@ -25,6 +25,13 @@ pub(crate) struct Issued {
 pub(crate) struct Snippet {
     pub(crate) client: &'static str,
     pub(crate) text: String,
+    pub(crate) parts: Vec<Part>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Part {
+    pub(crate) place: String,
+    pub(crate) body: String,
 }
 
 pub(crate) fn create(store: &Store, name: &str, base_url: &str, now: i64) -> Result<Issued, Error> {
@@ -51,32 +58,70 @@ pub(crate) fn hash_bytes(bytes: &[u8]) -> String {
         .collect()
 }
 
+fn snippet(client: &'static str, parts: Vec<(&str, String)>) -> Snippet {
+    let parts: Vec<Part> = parts
+        .into_iter()
+        .map(|(place, body)| Part {
+            place: place.to_owned(),
+            body,
+        })
+        .collect();
+    Snippet {
+        client,
+        text: parts
+            .iter()
+            .map(|part| format!("{}\n{}", part.place, part.body))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        parts,
+    }
+}
+
 pub(crate) fn snippets(base_url: &str, key: &str) -> Vec<Snippet> {
     vec![
-        Snippet {
-            client: "Claude Code",
-            text: format!(
-                "~/.claude/settings.json\n{{\n  \"env\": {{\n    \"ANTHROPIC_BASE_URL\": \"{base_url}\",\n    \"ANTHROPIC_AUTH_TOKEN\": \"{key}\",\n    \"CLAUDE_CODE_PROMPT_CACHE_TTL\": \"1h\"\n  }}\n}}\n"
-            ),
-        },
-        Snippet {
-            client: "Codex",
-            text: format!(
-                "~/.codex/config.toml\nmodel_provider = \"gw\"\n\n[model_providers.gw]\nname = \"gw\"\nbase_url = \"{base_url}/v1\"\nwire_api = \"responses\"\nenv_key = \"GW_API_KEY\"\nmodel_catalog_url = \"{base_url}/codex/models\"\n\n~/.codex/no-web-search.config.toml  (for non-OpenAI models: codex -p no-web-search -m <model>)\nmodel_provider = \"gw\"\nweb_search = \"disabled\"\n\n[features]\nmulti_agent = false\n\nshell\nexport GW_API_KEY={key}\n"
-            ),
-        },
-        Snippet {
-            client: "opencode",
-            text: format!(
-                "opencode.json\n{{\n  \"provider\": {{\n    \"gw\": {{\n      \"package\": \"@opencode/ai/providers/openai-compatible\",\n      \"settings\": {{ \"baseURL\": \"{base_url}/v1\", \"apiKey\": \"{key}\" }}\n    }}\n  }}\n}}\n"
-            ),
-        },
-        Snippet {
-            client: "pi",
-            text: format!(
-                "models.yml\nproviders:\n  gw:\n    baseUrl: {base_url}/v1\n    api: openai-responses\n    apiKey: {key}\n"
-            ),
-        },
+        snippet(
+            "Claude Code",
+            vec![(
+                "~/.claude/settings.json",
+                format!(
+                    "{{\n  \"env\": {{\n    \"ANTHROPIC_BASE_URL\": \"{base_url}\",\n    \"ANTHROPIC_AUTH_TOKEN\": \"{key}\",\n    \"CLAUDE_CODE_PROMPT_CACHE_TTL\": \"1h\"\n  }}\n}}\n"
+                ),
+            )],
+        ),
+        snippet(
+            "Codex",
+            vec![
+                (
+                    "~/.codex/config.toml",
+                    format!(
+                        "model_provider = \"gw\"\n\n[model_providers.gw]\nname = \"gw\"\nbase_url = \"{base_url}/v1\"\nwire_api = \"responses\"\nenv_key = \"GW_API_KEY\"\nmodel_catalog_url = \"{base_url}/codex/models\"\n"
+                    ),
+                ),
+                (
+                    "~/.codex/no-web-search.config.toml  (for non-OpenAI models: codex -p no-web-search -m <model>)",
+                    "model_provider = \"gw\"\nweb_search = \"disabled\"\n\n[features]\nmulti_agent = false\n".to_owned(),
+                ),
+                ("shell", format!("export GW_API_KEY={key}\n")),
+            ],
+        ),
+        snippet(
+            "opencode",
+            vec![(
+                "opencode.json",
+                format!(
+                    "{{\n  \"provider\": {{\n    \"gw\": {{\n      \"package\": \"@opencode/ai/providers/openai-compatible\",\n      \"settings\": {{ \"baseURL\": \"{base_url}/v1\", \"apiKey\": \"{key}\" }}\n    }}\n  }}\n}}\n"
+                ),
+            )],
+        ),
+        snippet(
+            "pi",
+            vec![(
+                "models.yml",
+                format!(
+                    "providers:\n  gw:\n    baseUrl: {base_url}/v1\n    api: openai-responses\n    apiKey: {key}\n"
+                ),
+            )],
+        ),
     ]
 }
 
@@ -89,6 +134,63 @@ mod tests {
         assert_eq!(
             hash("abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    fn legacy(base_url: &str, key: &str) -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "Claude Code",
+                format!(
+                    "~/.claude/settings.json\n{{\n  \"env\": {{\n    \"ANTHROPIC_BASE_URL\": \"{base_url}\",\n    \"ANTHROPIC_AUTH_TOKEN\": \"{key}\",\n    \"CLAUDE_CODE_PROMPT_CACHE_TTL\": \"1h\"\n  }}\n}}\n"
+                ),
+            ),
+            (
+                "Codex",
+                format!(
+                    "~/.codex/config.toml\nmodel_provider = \"gw\"\n\n[model_providers.gw]\nname = \"gw\"\nbase_url = \"{base_url}/v1\"\nwire_api = \"responses\"\nenv_key = \"GW_API_KEY\"\nmodel_catalog_url = \"{base_url}/codex/models\"\n\n~/.codex/no-web-search.config.toml  (for non-OpenAI models: codex -p no-web-search -m <model>)\nmodel_provider = \"gw\"\nweb_search = \"disabled\"\n\n[features]\nmulti_agent = false\n\nshell\nexport GW_API_KEY={key}\n"
+                ),
+            ),
+            (
+                "opencode",
+                format!(
+                    "opencode.json\n{{\n  \"provider\": {{\n    \"gw\": {{\n      \"package\": \"@opencode/ai/providers/openai-compatible\",\n      \"settings\": {{ \"baseURL\": \"{base_url}/v1\", \"apiKey\": \"{key}\" }}\n    }}\n  }}\n}}\n"
+                ),
+            ),
+            (
+                "pi",
+                format!(
+                    "models.yml\nproviders:\n  gw:\n    baseUrl: {base_url}/v1\n    api: openai-responses\n    apiKey: {key}\n"
+                ),
+            ),
+        ]
+    }
+
+    #[test]
+    fn snippet_text_matches_the_cli_output_byte_for_byte() {
+        let current: Vec<(&str, String)> = snippets("http://h:1", "gw_k")
+            .into_iter()
+            .map(|snippet| (snippet.client, snippet.text))
+            .collect();
+        assert_eq!(current, legacy("http://h:1", "gw_k"));
+    }
+
+    #[test]
+    fn snippet_text_is_its_parts_joined() {
+        let codex = snippets("http://h", "gw_x")
+            .into_iter()
+            .find(|s| s.client == "Codex")
+            .unwrap();
+        assert_eq!(codex.parts.len(), 3);
+        assert!(
+            codex.text.starts_with(
+                "~/.codex/config.toml\nmodel_provider = \"gw\"\n\n[model_providers.gw]"
+            )
+        );
+        assert!(
+            codex
+                .text
+                .contains("multi_agent = false\n\nshell\nexport GW_API_KEY=gw_x\n")
         );
     }
 

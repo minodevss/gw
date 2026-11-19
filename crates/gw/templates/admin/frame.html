@@ -1,14 +1,21 @@
 {% extends "admin/base.html" %}
-{% block title %}{{ title }} · gw{% endblock %}
+{% block title %}{{ frame.title }} · gw{% endblock %}
 {% block body %}
-<header>
-  <strong class="brand">gw</strong>
-  <nav>
-    {% for tab in tabs %}<a href="/admin/{{ tab.path }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}</a>{% endfor %}
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="bar">
+  <a class="brand" href="/admin/overview">gw</a>
+  <nav aria-label="Pages">
+    {% for tab in frame.tabs %}<a href="/admin/{{ tab.path }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}</a>{% endfor %}
   </nav>
   <form method="post" action="/admin/logout"><button type="submit" class="quiet">Sign out</button></form>
 </header>
-<main>
+<main id="main">
+{% if let Some(flash) = frame.flash %}
+<div class="flash{% if flash.failed_tone() %} failed{% endif %}" role="{% if flash.failed_tone() %}alert{% else %}status{% endif %}">{{ flash.text }}</div>
+{% endif %}
 {% block content %}{% endblock %}
 </main>
+<footer class="foot">Times in {{ frame.zone }}, your browser's time zone.</footer>
+</body>
 {% endblock %}
