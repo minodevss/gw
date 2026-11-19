@@ -8,6 +8,12 @@ use crate::account::{Account, Secret, State};
 use crate::catalog::{Capabilities, Catalog};
 use crate::provider::{Kind, Method, Provider, Scope, Usage};
 
+mod history;
+mod stats;
+
+pub(crate) use history::Sample;
+pub(crate) use stats::Point;
+
 pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error)]
@@ -67,6 +73,15 @@ CREATE TABLE IF NOT EXISTS log (
 CREATE INDEX IF NOT EXISTS log_ts ON log (ts);
 CREATE INDEX IF NOT EXISTS log_key ON log (key, ts);
 CREATE INDEX IF NOT EXISTS log_account ON log (account, ts);
+CREATE INDEX IF NOT EXISTS log_session ON log (session, id);
+CREATE TABLE IF NOT EXISTS usage_history (
+    account TEXT NOT NULL REFERENCES accounts(name) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    used REAL NOT NULL,
+    reset_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS usage_history_window ON usage_history (account, label, at);
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -227,11 +242,16 @@ impl Store {
         Ok(())
     }
 
-    pub(crate) fn set_usage(&self, name: &str, usage: &Usage, at: i64) -> Result<()> {
-        self.conn.execute(
+    pub(crate) fn set_usage(&mut self, name: &str, usage: &Usage, at: i64) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        let updated = tx.execute(
             "UPDATE accounts SET usage = ?2, usage_at = ?3 WHERE name = ?1",
             params![name, serde_json::to_string(usage)?, at],
         )?;
+        if updated > 0 {
+            history::record(&tx, name, usage, at)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -249,6 +269,10 @@ impl Store {
         let renamed = tx.execute("UPDATE accounts SET name = ?2 WHERE name = ?1", [old, new])?;
         tx.execute(
             "UPDATE catalog SET account = ?2 WHERE account = ?1",
+            [old, new],
+        )?;
+        tx.execute(
+            "UPDATE usage_history SET account = ?2 WHERE account = ?1",
             [old, new],
         )?;
         tx.commit()?;
@@ -772,5 +796,131 @@ mod tests {
             Some((2, 30, 10))
         );
         assert_eq!(store.key_last_used().unwrap(), vec![("k".to_owned(), 100)]);
+    }
+
+    fn usage(windows: &[(&str, f64, Option<i64>)]) -> Usage {
+        Usage {
+            windows: windows
+                .iter()
+                .map(|(label, used, reset_at)| crate::provider::Window {
+                    label: (*label).to_owned(),
+                    used: *used,
+                    reset_at: *reset_at,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn usage_history_keeps_only_changed_readings() {
+        let mut store = store();
+        store.insert_account(&account("a")).unwrap();
+        store
+            .set_usage("a", &usage(&[("5h", 0.1, Some(50)), ("7d", 0.2, None)]), 10)
+            .unwrap();
+        store
+            .set_usage("a", &usage(&[("5h", 0.1, Some(50)), ("7d", 0.3, None)]), 20)
+            .unwrap();
+        store
+            .set_usage("a", &usage(&[("5h", 0.1, Some(90)), ("7d", 0.3, None)]), 30)
+            .unwrap();
+        let samples: Vec<(String, i64)> = store
+            .usage_history(0)
+            .unwrap()
+            .into_iter()
+            .map(|s| (s.label, s.at))
+            .collect();
+        assert_eq!(
+            samples,
+            [
+                ("5h".to_owned(), 10),
+                ("5h".to_owned(), 30),
+                ("7d".to_owned(), 10),
+                ("7d".to_owned(), 20)
+            ]
+        );
+    }
+
+    #[test]
+    fn usage_history_starts_with_the_reading_before_the_range() {
+        let mut store = store();
+        store.insert_account(&account("a")).unwrap();
+        for (at, used) in [(10, 0.1), (20, 0.2), (30, 0.3)] {
+            store
+                .set_usage("a", &usage(&[("7d", used, None)]), at)
+                .unwrap();
+        }
+        let ats: Vec<i64> = store
+            .usage_history(25)
+            .unwrap()
+            .iter()
+            .map(|s| s.at)
+            .collect();
+        assert_eq!(ats, [20, 30]);
+    }
+
+    #[test]
+    fn usage_history_follows_renames_and_goes_with_the_account() {
+        let mut store = store();
+        store.insert_account(&account("old")).unwrap();
+        store
+            .set_usage("old", &usage(&[("7d", 0.5, None)]), 1)
+            .unwrap();
+        store.rename_account("old", "new").unwrap();
+        let names: Vec<String> = store
+            .usage_history(0)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.account)
+            .collect();
+        assert_eq!(names, ["new"]);
+        store.remove_account("new").unwrap();
+        assert_eq!(store.usage_history(0).unwrap(), []);
+    }
+
+    #[test]
+    fn usage_for_an_unknown_account_records_nothing() {
+        let mut store = store();
+        store
+            .set_usage("ghost", &usage(&[("7d", 0.5, None)]), 1)
+            .unwrap();
+        assert_eq!(store.usage_history(0).unwrap(), []);
+    }
+
+    #[test]
+    fn log_pages_rows_and_sessions() {
+        let store = store();
+        for (ts, session) in [(1, "s1"), (2, "s2"), (3, "s1"), (4, "s1")] {
+            store
+                .insert_log(&LogRow {
+                    ts,
+                    session: Some(session.to_owned()),
+                    reason: "new".to_owned(),
+                    status: if ts == 3 { 500 } else { 200 },
+                    input: Some(ts),
+                    ..LogRow::default()
+                })
+                .unwrap();
+        }
+        let page: Vec<i64> = store
+            .log_before(4, 2)
+            .unwrap()
+            .iter()
+            .map(|r| r.ts)
+            .collect();
+        assert_eq!(page, [3, 2]);
+        assert_eq!(store.log_row(2).unwrap().map(|r| r.ts), Some(2));
+        assert_eq!(store.log_row(99).unwrap(), None);
+        let session: Vec<i64> = store
+            .log_session("s1", 2)
+            .unwrap()
+            .iter()
+            .map(|r| r.ts)
+            .collect();
+        assert_eq!(session, [3, 4]);
+        let points = store.log_points(2).unwrap();
+        assert_eq!(points.len(), 3);
+        assert_eq!(points.iter().filter(|p| p.failed).count(), 1);
+        assert_eq!(points.first().map(|p| p.input), Some(2));
     }
 }

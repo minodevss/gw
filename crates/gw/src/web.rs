@@ -1,12 +1,20 @@
 mod accounts;
+mod activity;
 mod auth;
+mod chart;
+mod frame;
 mod keys;
 mod login;
-mod pages;
+mod models;
+mod overview;
+mod stats;
+mod traffic;
+mod usage;
+mod view;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use askama::Template;
 use axum::Router;
@@ -18,10 +26,13 @@ use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
 use url::Url;
 
+use frame::{Ctx, Frame};
+
 const PREFIX: &str = "/admin";
 const CSP: &str = "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 const HTMX: &[u8] = include_bytes!("../assets/htmx.min.js");
 const CSS: &[u8] = include_bytes!("../assets/admin.css");
+const JS: &[u8] = include_bytes!("../assets/admin.js");
 
 #[derive(Clone)]
 pub(crate) struct Web(Arc<Inner>);
@@ -31,6 +42,7 @@ struct Inner {
     http: reqwest::Client,
     sessions: Mutex<HashMap<String, auth::Session>>,
     logins: Mutex<HashMap<String, login::Login>>,
+    issued: Mutex<HashMap<String, keys::Issued>>,
 }
 
 pub(crate) fn router(home: PathBuf, http: reqwest::Client) -> Router {
@@ -39,11 +51,22 @@ pub(crate) fn router(home: PathBuf, http: reqwest::Client) -> Router {
         http,
         sessions: Mutex::default(),
         logins: Mutex::default(),
+        issued: Mutex::default(),
     }));
     let signed_in = Router::new()
-        .route("/", get(pages::home))
-        .route("/{tab}", get(pages::page))
-        .route("/live/{tab}", get(pages::live))
+        .route("/", get(start_page))
+        .route("/overview", get(overview::page))
+        .route("/live/overview", get(overview::live))
+        .route("/usage", get(usage::page))
+        .route("/live/usage", get(usage::live))
+        .route("/traffic", get(traffic::page))
+        .route("/live/traffic", get(traffic::live))
+        .route("/activity", get(activity::page))
+        .route("/live/activity", get(activity::live))
+        .route("/request/{id}", get(activity::request))
+        .route("/session/{id}", get(activity::session))
+        .route("/accounts", get(accounts::page))
+        .route("/live/accounts", get(accounts::live))
         .route("/accounts/new", get(accounts::choose))
         .route(
             "/accounts/new/{provider}/{method}",
@@ -52,22 +75,77 @@ pub(crate) fn router(home: PathBuf, http: reqwest::Client) -> Router {
         .route("/account/{name}", get(accounts::detail))
         .route("/account/{name}/login", post(accounts::sign_in_again))
         .route("/account/{name}/usage", post(accounts::refresh_usage))
+        .route(
+            "/account/{name}/models",
+            post(accounts::refresh_account_models),
+        )
         .route("/account/{name}/rename", post(accounts::rename))
         .route("/account/{name}/remove", post(accounts::remove))
-        .route("/models/refresh", post(accounts::refresh_models))
+        .route("/models", get(models::page))
+        .route("/live/models", get(models::live))
+        .route("/models/refresh", post(models::refresh))
         .route("/logins/{id}", get(login::page).post(login::paste))
         .route("/logins/{id}/state", get(login::state))
+        .route("/logins/{id}/cancel", post(login::cancel))
+        .route("/logins/{id}/retry", post(login::retry))
+        .route("/keys", get(keys::page))
+        .route("/live/keys", get(keys::live))
         .route("/keys/new", get(keys::new_form).post(keys::create))
+        .route("/keys/issued/{id}", get(keys::issued))
+        .route("/keys/issued/{id}/done", post(keys::done))
         .route("/key/{name}", get(keys::confirm_revoke))
         .route("/key/{name}/revoke", post(keys::revoke))
         .route("/logout", post(auth::logout))
+        .fallback(not_found)
         .route_layer(middleware::from_fn_with_state(web.clone(), auth::require));
     Router::new()
         .merge(signed_in)
         .route("/login", get(auth::login_page).post(auth::login))
         .route("/assets/{name}", get(asset))
+        .layer(middleware::from_fn(flash_once))
         .layer(middleware::from_fn(guard))
         .with_state(web)
+}
+
+async fn start_page() -> Response {
+    see_other("/overview")
+}
+
+#[derive(Template)]
+#[template(path = "admin/missing.html")]
+struct Missing {
+    frame: Frame,
+}
+
+async fn not_found(ctx: Ctx) -> Response {
+    missing(&ctx)
+}
+
+fn missing(ctx: &Ctx) -> Response {
+    html(
+        StatusCode::NOT_FOUND,
+        &Missing {
+            frame: ctx.frame(None, "Not found"),
+        },
+    )
+}
+
+async fn flash_once(request: Request, next: Next) -> Response {
+    let had_flash = frame::cookie(request.headers(), frame::FLASH_COOKIE).is_some();
+    let htmx = request.headers().contains_key("hx-request");
+    let https = request
+        .headers()
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|proto| proto.eq_ignore_ascii_case("https"));
+    let mut response = next.run(request).await;
+    if had_flash && !htmx && response.status().is_success() {
+        frame::clear_flash(&mut response);
+    }
+    if https {
+        frame::secure_flash(&mut response);
+    }
+    response
 }
 
 async fn guard(request: Request, next: Next) -> Response {
@@ -130,6 +208,7 @@ async fn asset(Path(name): Path<String>, headers: HeaderMap) -> Response {
     let (body, kind) = match name.as_str() {
         "htmx.min.js" => (HTMX, "text/javascript; charset=utf-8"),
         "admin.css" => (CSS, "text/css; charset=utf-8"),
+        "admin.js" => (JS, "text/javascript; charset=utf-8"),
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
     let etag = format!("\"{}\"", crate::ops::key::hash_bytes(body));
@@ -169,6 +248,35 @@ fn html(status: StatusCode, page: &impl Template) -> Response {
             .into_response(),
         Err(error) => failure(&error),
     }
+}
+
+// htmx 4 swaps every response except 204 and 304, so a live refresh that fails returns 204 to
+// keep the last good render, and polling carries on.
+// https://github.com/bigskysoftware/htmx/blob/v4.0.2/www/src/content/docs/whats-new-in-htmx-4.md
+fn fragment(rendered: anyhow::Result<String>) -> Response {
+    match rendered {
+        Ok(body) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            body,
+        )
+            .into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "admin live refresh failed");
+            StatusCode::NO_CONTENT.into_response()
+        }
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    // A panic while holding the lock leaves the map itself intact, so keep using it.
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn redirect_with(path: &str, flash: &frame::Flash) -> Response {
+    frame::with_flash(see_other(path), flash)
 }
 
 fn failure(error: &dyn std::fmt::Display) -> Response {

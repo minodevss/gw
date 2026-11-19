@@ -1,0 +1,11 @@
+<div id="live" data-live="5" hx-get="/admin/live/accounts" hx-trigger="gwtick" hx-swap="outerMorph">
+{% if groups.is_empty() %}
+<div class="empty">
+  <p>No accounts yet.</p>
+  <p>Add a subscription, an API key or a local endpoint. gw tries subscriptions first, and among them the one whose usage window resets soonest.</p>
+</div>
+{% else %}
+{% include "admin/account_rows.html" %}
+<p class="note">Within each provider, accounts are listed in the order gw tries them for a new conversation. A conversation stays on its account while that account can serve it. <span class="live-stamp">Updated {{ updated }}.</span></p>
+{% endif %}
+</div>

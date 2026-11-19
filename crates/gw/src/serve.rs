@@ -182,6 +182,10 @@ pub(crate) async fn run(home: &Path, listen: &str) -> anyhow::Result<()> {
         .route("/v1/models/{id}", get(model))
         .route("/codex/models", get(codex_models))
         .route("/healthz", get(async || "ok"))
+        .route(
+            "/admin/",
+            get(async || axum::response::Redirect::to("/admin/overview")),
+        )
         .with_state(app)
         .nest("/admin", admin);
     let listener = tokio::net::TcpListener::bind(listen).await?;
@@ -218,7 +222,7 @@ async fn shutdown() {
 }
 
 fn write_loop(db: &Path, mut receiver: mpsc::Receiver<Write>) {
-    let store = match Store::open(db) {
+    let mut store = match Store::open(db) {
         Ok(store) => store,
         Err(error) => {
             tracing::error!(%error, "database writer could not open the database");

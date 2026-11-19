@@ -1,12 +1,17 @@
 {% extends "admin/frame.html" %}
 {% block content %}
-<h1>Add account</h1>
+<p class="crumb"><a href="/admin/accounts">Accounts</a></p>
+<div class="head"><h1>Add account</h1><span class="sub">Subscriptions are tried before pay-as-you-go keys.</span></div>
+<div class="choices">
 {% for group in groups %}
-<h2>{{ group.title }}</h2>
-<ul class="choices">
-  {% for option in group.options %}
-  <li><a href="/admin/accounts/new/{{ option.path }}">{{ option.label }}</a> <span class="dim">{{ option.billing }}</span></li>
-  {% endfor %}
-</ul>
+<section>
+  <h2>{{ group.title }}</h2>
+  <ul>
+    {% for option in group.options %}
+    <li><a href="/admin/accounts/new/{{ option.path }}">{{ option.label }}</a>{% if !option.billing.is_empty() && option.billing != option.hint %} <span class="dim small">{{ option.billing }}</span>{% endif %}<p>{{ option.hint }}</p></li>
+    {% endfor %}
+  </ul>
+</section>
 {% endfor %}
+</div>
 {% endblock %}

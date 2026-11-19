@@ -1,0 +1,23 @@
+<div id="live" data-live="10" hx-get="{{ poll }}" hx-trigger="gwtick" hx-swap="outerMorph">
+{% if rows.is_empty() %}
+<div class="empty">{% if filtered %}<p>No model matches.</p>{% else %}<p>No models yet.</p><p>Add an account, or refresh the model lists.</p>{% endif %}</div>
+{% else %}
+<div class="scroll"><table>
+  <caption>{% if filtered %}{{ rows.len() }} of {{ total }} models{% else %}{{ total }} models, most used in the last 7 days first{% endif %}</caption>
+  <thead><tr><th>Model</th><th>Next account</th><th class="num">Context</th><th class="num opt">Max output</th><th class="opt">Effort</th><th class="num opt">Requests, 7 days</th><th class="opt">Served by</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td class="mono">{{ row.id }}{% if !row.traits.is_empty() %}<div class="dim small">{{ row.traits }}</div>{% endif %}</td>
+      <td>{% if row.blocked %}<span class="state warn">{{ row.next }}</span>{% else %}<span class="mono">{{ row.next }}</span>{% endif %}</td>
+      <td class="num">{{ row.context }}</td>
+      <td class="num opt">{{ row.max_output }}</td>
+      <td class="opt small">{{ row.efforts }}</td>
+      <td class="num opt">{{ row.used }}</td>
+      <td class="opt small">{% for (account, tone) in row.accounts %}<a class="mono{% if *tone != "ok" %} {{ tone }}{% endif %}" href="/admin/account/{{ account|urlencode_strict }}" title="{% if *tone == "ok" %}ready{% else if *tone == "warn" %}limited{% else %}signed out{% endif %}">{{ account }}</a>{% if !loop.last %}, {% endif %}{% endfor %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+</div>

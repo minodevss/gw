@@ -5,7 +5,7 @@ use crate::account::Account;
 use crate::catalog::{Catalog, Overrides, view};
 use crate::clock;
 use crate::provider::{Balance, list_models, query_balance, query_usage};
-use crate::select::{self, Choice, NoCandidate, Query, Suffix};
+use crate::select::{self, Choice, NoCandidate, Query};
 use proto::features::Features;
 
 #[derive(Debug)]
@@ -87,9 +87,10 @@ pub(crate) fn next_in(
     now: i64,
 ) -> Result<Choice, NoCandidate> {
     let features = Features::default();
+    let (model, suffix) = select::parse_model(model);
     let query = Query {
         model,
-        suffix: Suffix::Any,
+        suffix,
         features: &features,
         pinned: None,
         skip: &[],

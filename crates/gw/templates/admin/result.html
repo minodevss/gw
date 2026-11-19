@@ -1,8 +1,0 @@
-{% extends "admin/frame.html" %}
-{% block content %}
-<h1>{{ heading }}</h1>
-<ul class="plain">
-  {% for line in lines %}<li>{{ line }}</li>{% endfor %}
-</ul>
-<p><a href="{{ back }}">{{ back_label }}</a></p>
-{% endblock %}

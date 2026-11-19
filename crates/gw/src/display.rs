@@ -107,3 +107,31 @@ pub(crate) fn rank(account: &Account, now: i64) -> u8 {
         Health::SignedOut(_) => 2,
     }
 }
+
+pub(crate) fn method_text(provider: Provider, method: Method) -> (&'static str, &'static str) {
+    match (provider, method) {
+        (Provider::Anthropic, Method::Oauth) => {
+            ("Claude subscription", "sign in with your Claude account")
+        }
+        (Provider::Anthropic, Method::SetupToken) => {
+            ("Setup token", "paste a token from claude setup-token")
+        }
+        (Provider::OpenAi, Method::Siwc) => ("ChatGPT subscription", "sign in with your browser"),
+        (Provider::OpenAi, Method::Codex) => {
+            ("ChatGPT subscription, device code", "sign in on any device")
+        }
+        (Provider::Zai, Method::Plan) => ("GLM Coding Plan", "subscription key"),
+        (Provider::Moonshot, Method::Plan) => ("Kimi coding plan", "subscription key"),
+        (Provider::Custom, _) => ("Custom endpoint", "any compatible API"),
+        (
+            Provider::Anthropic | Provider::OpenAi | Provider::Zai | Provider::Moonshot,
+            Method::Oauth
+            | Method::SetupToken
+            | Method::Siwc
+            | Method::Codex
+            | Method::Plan
+            | Method::Key
+            | Method::Custom,
+        ) => ("API key", "pay as you go"),
+    }
+}

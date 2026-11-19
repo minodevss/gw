@@ -1,23 +1,13 @@
-<section class="live" hx-get="/admin/live/models" hx-trigger="every 2s" hx-swap="outerHTML">
-{% include "admin/status.html" %}
-<form class="actions" method="post" action="/admin/models/refresh"><button type="submit">Refresh models</button></form>
-{% if rows.is_empty() %}
-<p class="empty">No models yet. Add an account, or refresh the model lists.</p>
-{% else %}
-<table>
-  <thead><tr><th>Model</th><th>Next request goes to</th><th class="num">Context</th><th class="num">Max output</th><th>Effort</th><th>Accounts</th></tr></thead>
-  <tbody>
-  {% for row in rows %}
-    <tr>
-      <td>{{ row.id }}</td>
-      <td class="{% if row.blocked %}warn{% endif %}">{{ row.next }}</td>
-      <td class="num">{{ row.context }}</td>
-      <td class="num">{{ row.max_output }}</td>
-      <td>{{ row.efforts }}</td>
-      <td class="dim">{{ row.accounts }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-</section>
+{% extends "admin/frame.html" %}
+{% block content %}
+<div class="head"><h1>Models</h1><span class="sub">Every model your accounts serve, and where a new conversation would go</span>
+  <span class="tools"><form method="post" action="/admin/models/refresh" class="inline"><button type="submit">Refresh models</button></form></span></div>
+<form class="filters" method="get" action="/admin/models" role="search">
+  <label for="q" class="sr">Search models</label>
+  <input id="q" name="q" class="search" value="{{ q }}" placeholder="Search models or accounts" autocomplete="off" spellcheck="false" data-search>
+  <button type="submit">Search</button>
+  {% if !q.is_empty() %}<a href="/admin/models">Clear</a>{% endif %}
+</form>
+{{ live|safe }}
+<p class="note">Ask for a model by its id. Add <span class="mono">:sub</span> to use only subscriptions or <span class="mono">:api</span> for only API keys, as in <span class="mono">claude-opus-5-5:sub</span>. Refreshing asks every provider for its model list, which takes a moment.</p>
+{% endblock %}

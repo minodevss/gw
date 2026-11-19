@@ -1,11 +1,13 @@
 {% extends "admin/frame.html" %}
 {% block content %}
-<h1>Revoke {{ name }}</h1>
-<p>Clients using this key stop working at once.</p>
-<form method="post" action="/admin/key/{{ name|urlencode_strict }}/revoke" class="form">
-  <label for="confirm">Type {{ name }} to revoke it</label>
-  <input id="confirm" name="confirm" autocomplete="off" required>
-  {% if let Some(error) = error %}<p class="bad">{{ error }}</p>{% endif %}
-  <button type="submit" class="danger">Revoke</button>
+<p class="crumb"><a href="/admin/keys">Keys</a></p>
+<div class="head"><h1>Revoke {{ name }}</h1></div>
+<p>Clients using this key stop working at once. This cannot be undone; you would create a new key instead.</p>
+<p class="note">{% if let Some(at) = last_used %}Last used <time datetime="{{ at.iso }}" title="{{ at.local }}">{{ at.ago }}</time>, {{ recent }} requests in the last 24 hours.{% else %}Never used.{% endif %}</p>
+<form method="post" action="/admin/key/{{ path }}/revoke" class="form">
+  <label for="confirm">Type <span class="mono">{{ name }}</span> to revoke it</label>
+  <input id="confirm" name="confirm" autocomplete="off" spellcheck="false" required autofocus{% if error.is_some() %} aria-invalid="true" aria-describedby="confirm-error"{% endif %}>
+  {% if let Some(error) = error %}<p class="error" id="confirm-error">{{ error }}</p>{% endif %}
+  <button type="submit" class="danger">Revoke key</button>
 </form>
 {% endblock %}
