@@ -192,8 +192,12 @@ Running `gw` with no command opens the management TUI. It shows accounts with th
 
 Where a terminal is awkward, as in Kubernetes, open `http://<gw address>/admin` in a browser. It is on the same port as the API.
 
-- It shows the same accounts, activity, models and keys as the TUI, and refreshes them every two seconds.
-- You can add accounts and sign in to them, rename or remove accounts, refresh usage and model lists, and create or revoke keys.
+- **Overview** says whether every account can take requests, lists what needs attention with the fix next to it, and shows where the next request for each model you use would go.
+- **Usage** charts each account's usage windows (such as 5 hours, 7 days and per-model weekly windows) with resets, reported limits and a projection to the reset, the capacity left across accounts, and how much each account had left at its last resets. gw saves a reading whenever a response reports a change, so history starts once you run this version.
+- **Traffic** breaks requests and tokens down by key, model, account or outcome, with cache use, request times and a weekday-by-hour view.
+- **Activity** is the request log, with the same search as `gw log --filter`, a page per request and per conversation.
+- **Accounts**, **Models** and **Keys** let you add accounts and sign in to them, rename or remove them, refresh usage and model lists, and create or revoke keys.
+- Pages refresh themselves while they are open. Times are in your browser's time zone.
 - Sign-ins work from any browser, because the page asks for the code or address you get after signing in.
 
 Sign in with the token from `gw admin token` (`docker exec gw gw admin token`, `kubectl exec <pod> -- gw admin token`). The command creates the token on first use and prints the same one after that. `--rotate` replaces it and signs out every browser. Until a token exists the page only explains how to create one.
