@@ -1,0 +1,26 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<p class="crumb"><a href="/admin/keys">Keys</a></p>
+<div class="head"><h1>Key {{ name }}</h1></div>
+<p class="notice warn">Save the key now. OpenGateway keeps only its hash. This page shows the key for {{ left }} more, or until you press I saved the key.</p>
+<section>
+  <div class="section-head"><h2>Key</h2></div>
+  <div class="secret"><pre id="key">{{ key }}</pre><button type="button" data-copy="key">Copy</button></div>
+</section>
+<section>
+  <div class="section-head"><h2>Client settings</h2><span class="meta">Open the client you use. The key is already filled in.</span></div>
+  {% for snippet in snippets %}
+  <details class="snippet"{% if loop.first %} open{% endif %}>
+    <summary><h3>{{ snippet.client }}</h3></summary>
+    {% let client = loop.index %}
+    {% for part in snippet.parts %}
+    <p class="note mono">{{ part.place }}</p>
+    <div class="secret"><pre id="snippet-{{ client }}-{{ loop.index }}">{{ part.body }}</pre><button type="button" data-copy="snippet-{{ client }}-{{ loop.index }}">Copy</button></div>
+    {% endfor %}
+  </details>
+  {% endfor %}
+</section>
+<section>
+  <form method="post" action="/admin/keys/issued/{{ id }}/done"><button type="submit" class="primary">I saved the key</button></form>
+</section>
+{% endblock %}

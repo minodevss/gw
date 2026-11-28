@@ -1,0 +1,28 @@
+---
+source: crates/opengateway/src/tui/tests.rs
+expression: harness.render()
+---
+ OpenGateway    Accounts   Activity   Models   Keys    running  100.64.0.2:8787
+
+ claude-max-1
+ Claude subscription
+
+ Usage
+  5 hours  ━━━━━━━───   72%   resets 15:12
+  7 days   ━━━───────   31%   resets Wed 14:00
+
+ Last 5 hours
+  1,204 requests
+  4.2M tokens in, 93% cached
+  210k tokens out
+
+ Active sessions
+  macbook   claude-opus-5-5   20s ago
+
+
+
+
+
+
+
+ ← back   enter actions   ? help

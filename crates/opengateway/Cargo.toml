@@ -1,0 +1,45 @@
+[package]
+name = "opengateway"
+version = "0.2.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+askama = { version = "0.16.1", default-features = false, features = ["derive", "std", "urlencode"] }
+axum = "0.8.9"
+base64 = "0.23.1"
+bytes = "1.12.1"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+crossterm = { version = "0.29.0", features = ["bracketed-paste", "event-stream"] }
+futures-util = "0.3.34"
+getrandom = "0.4.3"
+http = "1.5.0"
+jiff = "1.0.0"
+proto = { path = "../proto" }
+ratatui = "0.30.2"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream", "http2", "json"] }
+rpassword = "7.5.5"
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+terminal-colorsaurus = "1.0.3"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal", "rt", "io-util"] }
+toml = "1.2.1"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "ansi"] }
+unicode-segmentation = "1.13.3"
+unicode-width = "0.2.3"
+url = "2.5.8"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+insta = "1.49.0"
+tower = { version = "0.5.3", features = ["util"] }
+tokio = { version = "1.54.1", features = ["test-util"] }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/proto", "crates/gw"]
+members = ["crates/proto", "crates/opengateway"]
 
 [workspace.package]
 edition = "2024"

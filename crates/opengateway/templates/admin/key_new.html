@@ -1,0 +1,16 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<p class="crumb"><a href="/admin/keys">Keys</a></p>
+<div class="head"><h1>Create key</h1></div>
+<form method="post" action="/admin/keys/new" class="form" novalidate>
+  <label for="name">Device name</label>
+  <input id="name" name="name" value="{{ name }}" placeholder="macbook" autocomplete="off" spellcheck="false" required autofocus{% if let Some((field, _)) = error %}{% if *field == "name" %} aria-invalid="true" aria-describedby="name-error"{% endif %}{% endif %}>
+  <span class="hint">Shown in the activity log for every request made with this key.</span>
+  {% if let Some((field, message)) = error %}{% if *field == "name" %}<p class="error" id="name-error">{{ message }}</p>{% endif %}{% endif %}
+  <label for="url">Address clients use to reach OpenGateway</label>
+  <input id="url" name="url" value="{{ url }}" autocomplete="off" spellcheck="false" inputmode="url" required{% if let Some((field, _)) = error %}{% if *field == "url" %} aria-invalid="true" aria-describedby="url-error"{% endif %}{% endif %}>
+  <span class="hint">{% if detected %}Taken from this browser's address bar. Change it if devices reach OpenGateway another way, such as a Tailscale IP.{% else %}Used only to fill in the client settings.{% endif %}</span>
+  {% if let Some((field, message)) = error %}{% if *field == "url" %}<p class="error" id="url-error">{{ message }}</p>{% endif %}{% endif %}
+  <button type="submit" class="primary">Create key</button>
+</form>
+{% endblock %}

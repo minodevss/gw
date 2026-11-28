@@ -1,0 +1,24 @@
+{% extends "admin/base.html" %}
+{% block title %}Sign in · OpenGateway{% endblock %}
+{% block body %}
+<body>
+<main class="narrow" id="main">
+  <h1>OpenGateway admin</h1>
+  {% if let Some(flash) = flash %}<p class="flash" role="status">{{ flash.text }}</p>{% endif %}
+  {% if has_token %}
+  <form method="post" action="/admin/login" class="form">
+    <label for="token">Admin token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" spellcheck="false" required autofocus{% if error.is_some() %} aria-invalid="true" aria-describedby="token-error"{% endif %}>
+    <span class="hint">Print it on the server with <code>opengateway admin token</code>.</span>
+    {% if let Some(error) = error %}<p class="error" id="token-error">{{ error }}</p>{% endif %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit" class="primary">Sign in</button>
+  </form>
+  {% else %}
+  <p>There is no admin token yet. Create one on the server, then reload this page.</p>
+  <div class="secret"><pre id="cmd">opengateway admin token</pre><button type="button" data-copy="cmd">Copy</button></div>
+  <p class="note">In Docker: <code>docker exec opengateway opengateway admin token</code>. In Kubernetes: <code>kubectl exec &lt;pod&gt; -- opengateway admin token</code>.</p>
+  {% endif %}
+</main>
+</body>
+{% endblock %}
