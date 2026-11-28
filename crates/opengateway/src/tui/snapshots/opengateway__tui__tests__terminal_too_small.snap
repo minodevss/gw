@@ -1,0 +1,6 @@
+---
+source: crates/opengateway/src/tui/tests.rs
+expression: "accounts_view(healthy_accounts()).size(50, 12).render()"
+---
+Terminal too small. OpenGateway needs at least
+60x16, this is 50x12.

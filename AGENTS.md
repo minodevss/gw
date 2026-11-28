@@ -1,6 +1,6 @@
 # AGENTS.md
 
-gw is a personal LLM gateway in Rust. It serves the Anthropic Messages, OpenAI Responses and OpenAI Chat Completions APIs, routes each request to one of many upstream accounts, and translates between the APIs when client and upstream differ. User-facing docs are in `README.md`.
+OpenGateway is a personal LLM gateway in Rust. It serves the Anthropic Messages, OpenAI Responses and OpenAI Chat Completions APIs, routes each request to one of many upstream accounts, and translates between the APIs when client and upstream differ. User-facing docs are in `README.md`.
 
 ## Layout
 
@@ -10,7 +10,7 @@ gw is a personal LLM gateway in Rust. It serves the Anthropic Messages, OpenAI R
   - `passthrough/`: `peek` (read fields), `splice` (replace only the top-level `model` bytes), `tap` (read usage and errors from responses).
   - `reject.rs`: rejection reasons; `capability_rejected: <class>` tokens for Claude Code.
   - `tests/`: integration tests, `tests/fixtures/` (sanitized real captures), `tests/snapshots/` (insta).
-- `crates/gw`: the binary.
+- `crates/opengateway`: the binary.
   - `serve.rs` (routing, auth, account selection loop), `forward.rs` (upstream send, stream relay and transcoding).
   - `select.rs` (candidate order), `session.rs` (conversation pinning), `store.rs` (SQLite).
   - `provider.rs` and `provider/`: everything provider-specific: endpoints, auth, login, refresh, model lists, limit signals.
@@ -29,7 +29,7 @@ All four must pass before a commit. Update snapshots with `INSTA_UPDATE=always c
 
 ## Releases
 
-Bump `version` in `crates/gw/Cargo.toml`, commit, then push a `v<version>` tag. `.github/workflows/release.yml` checks that the tag matches, publishes the Linux and macOS binaries with checksums and attestations, and pushes the `ghcr.io` image. After editing workflows, run `gh actions-lock` to update `.github/workflows/actions.lock`.
+Bump `version` in `crates/opengateway/Cargo.toml`, commit, then push a `v<version>` tag. `.github/workflows/release.yml` checks that the tag matches, publishes the Linux and macOS binaries with checksums and attestations, and pushes the `ghcr.io` image. After editing workflows, run `gh actions-lock` to update `.github/workflows/actions.lock`.
 
 ## Code style
 
@@ -37,7 +37,7 @@ Follow `docs/style/rust.md`. The rules that matter most:
 
 - No comments except why-comments for external facts, with a source link. No `///` docs.
 - No `unwrap`, `expect`, `panic!` or indexing outside tests. No `println!`; CLI output goes through `cli::out`.
-- `foo.rs` + `foo/` modules, never `mod.rs`. `pub(crate)` in `gw`.
+- `foo.rs` + `foo/` modules, never `mod.rs`. `pub(crate)` in `opengateway`.
 - Provider and API dispatch is `enum` + exhaustive `match`; never `_ =>` on project enums.
 - Same input, same bytes: translation output must be deterministic so prompt caches keep hitting.
 
@@ -48,7 +48,7 @@ Changes must keep these true:
 - Same-API requests are forwarded byte for byte except credentials and the `model` value. Never re-serialize them.
 - No guessing. Anything a target cannot express is rejected with a clear error, not dropped. For Claude Code clients, use the `capability_rejected` classes in `reject.rs` exactly.
 - The only automatic action is moving to the next account on an upstream usage-limit signal (`provider/limit.rs`). Transient errors are returned to the client, which retries.
-- gw sends no requests of its own except when the user asks (`gw model refresh`, TUI refresh).
+- OpenGateway sends no requests of its own except when the user asks (`opengateway model refresh`, TUI refresh).
 - Provider facts (URLs, headers, error codes) live only under `provider/` and must come from primary sources (vendor docs, official client source). Cite the source in a why-comment when it is not obvious.
 
 ## Testing

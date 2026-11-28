@@ -1,0 +1,47 @@
+<div id="live" data-live="5" hx-get="/admin/live/overview" hx-trigger="gwtick" hx-swap="outerMorph">
+<section>
+  <p class="verdict"><span class="state {{ verdict_tone }}">{{ verdict }}</span></p>
+  <p class="facts note"><span>{{ hour }}</span><span class="live-stamp">Updated {{ updated }}</span></p>
+  {% if onboarding.accounts || onboarding.keys %}
+  <ol class="attention">
+    {% if onboarding.accounts %}<li><span class="what">Add an account so OpenGateway has somewhere to send requests.</span><a class="button primary" href="/admin/accounts/new">Add account</a></li>{% endif %}
+    {% if onboarding.keys %}<li><span class="what">Create a key for each device that will use OpenGateway.</span><a class="button{% if !onboarding.accounts %} primary{% endif %}" href="/admin/keys/new">Create key</a></li>{% endif %}
+  </ol>
+  {% endif %}
+  {% if !attention.is_empty() %}
+  <ul class="attention" aria-label="Needs attention">
+    {% for item in attention %}
+    <li><span class="what"><span class="state {{ item.tone }}"><span class="mono">{{ item.what }}</span></span></span><span class="why">{{ item.why }}</span>{% if let Some((label, href)) = item.link %}<a href="{{ href }}">{{ label }}</a>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+{% if !routes.is_empty() %}
+<section>
+  <div class="section-head"><h2>Where the next request goes</h2><span class="meta">Models used in the last 24 hours, for a new conversation</span></div>
+  <div class="scroll"><table>
+    <thead><tr><th>Model</th><th>Next account</th><th class="num opt">Last 24 hours</th></tr></thead>
+    <tbody>
+    {% for route in routes %}
+      <tr><td class="mono">{{ route.model }}</td><td>{% if route.blocked %}<span class="state warn">{{ route.next }}</span>{% else %}<span class="mono">{{ route.next }}</span>{% endif %}</td><td class="num opt dim">{{ route.requests }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if more_routes > 0 %}<p class="note"><a href="/admin/models">{{ more_routes }} more models used in the last 24 hours</a></p>{% endif %}
+</section>
+{% endif %}
+
+{% if !groups.is_empty() %}
+<section>
+  <div class="section-head"><h2>Accounts</h2><span class="meta">The most used window of each, as the provider last reported it</span><span class="tools"><a href="/admin/accounts">All windows</a> · <a href="/admin/usage">History</a></span></div>
+  {% include "admin/account_compact.html" %}
+</section>
+{% endif %}
+
+<section>
+  <div class="section-head"><h2>Last 24 hours</h2><span class="tools"><a href="/admin/traffic?range=24h">Traffic</a></span></div>
+  <p class="facts">{% for (label, value) in day_facts %}<span><b>{{ value }}</b> {{ label }}</span>{% endfor %}</p>
+  {{ day|safe }}
+</section>
+</div>

@@ -1,0 +1,5 @@
+{% extends "admin/frame.html" %}
+{% block content %}
+<div class="head"><h1>Accounts</h1><span class="sub">Where OpenGateway sends requests, in the order it tries them</span><span class="tools"><a class="button primary" href="/admin/accounts/new">Add account</a></span></div>
+{{ live|safe }}
+{% endblock %}

@@ -74,10 +74,10 @@ parts.retain(|part| !part.is_empty_text());
 
 - Use `foo.rs` plus `foo/`, never `mod.rs`. The Rust Book calls `foo.rs` the most idiomatic layout and `mod.rs` the older style; many `mod.rs` files are hard to tell apart in an editor. `clippy::mod_module_files` enforces this.
 - One concept per file. Split by responsibility, not by length.
-- Visibility is private by default. In the `gw` binary crate use `pub(crate)`; plain `pub` is only for the `proto` crate's public API. `unreachable_pub` enforces this.
+- Visibility is private by default. In the `opengateway` binary crate use `pub(crate)`; plain `pub` is only for the `proto` crate's public API. `unreachable_pub` enforces this.
 - `lib.rs` and `main.rs` hold module declarations, re-exports and the entry point only.
 - Imports go at the top of the file. Glob imports only for `use super::*` in tests.
-- A dependency cycle means the structure is wrong. `proto` does not know `gw`; `ops` does not know `tui` or `main`.
+- A dependency cycle means the structure is wrong. `proto` does not know `opengateway`; `ops` does not know `tui` or `main`.
 - `proto` has no IO and no async: no `tokio`, `reqwest`, `rusqlite`, `tracing`, files, clock or randomness. Pass times and ids in as arguments.
 
 ## Types and errors
@@ -96,8 +96,8 @@ parts.retain(|part| !part.is_empty_text());
 **Errors**
 - Callers that branch on the error get a typed `thiserror` enum. Callers that only report get `anyhow`.
 - `proto`: `thiserror` enums. Rejections carry the reason the gateway turns into an HTTP error.
-- `gw` request path (selection, forwarding, account state): typed errors mapped to HTTP status and reason.
-- `gw` edges (`main`, CLI, `ops`, TUI jobs): `anyhow::Result` with `.context("...")`.
+- `opengateway` request path (selection, forwarding, account state): typed errors mapped to HTTP status and reason.
+- `opengateway` edges (`main`, CLI, `ops`, TUI jobs): `anyhow::Result` with `.context("...")`.
 - Error messages start lowercase and have no trailing period. Chain causes with `#[source]`/`#[from]` (C-GOOD-ERR).
 - Error types are `Send + Sync + 'static`.
 - No `Box<dyn Error>` or `Result<_, String>` in APIs.

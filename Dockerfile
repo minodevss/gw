@@ -26,19 +26,19 @@ RUN --mount=type=cache,target=/root/.cargo/registry/index \
     --mount=type=cache,target=/root/.cargo/registry/cache \
     --mount=type=cache,target=/root/.cargo/git/db \
     --mount=type=cache,target=/src/target,id=target-$TARGETPLATFORM \
-    xx-cargo build --release --locked --offline --package gw --target-dir target \
-    && xx-verify --static target/$(xx-cargo --print-target-triple)/release/gw \
-    && cp target/$(xx-cargo --print-target-triple)/release/gw /gw \
+    xx-cargo build --release --locked --offline --package opengateway --target-dir target \
+    && xx-verify --static target/$(xx-cargo --print-target-triple)/release/opengateway \
+    && cp target/$(xx-cargo --print-target-triple)/release/opengateway /opengateway \
     && mkdir /data
 
 FROM scratch AS binary
-COPY --from=build /gw /gw
+COPY --from=build /opengateway /opengateway
 
 FROM gcr.io/distroless/static-debian13:nonroot
-COPY --from=build /gw /usr/local/bin/gw
+COPY --from=build /opengateway /usr/local/bin/opengateway
 COPY --from=build --chown=nonroot:nonroot /data /data
-ENV GW_HOME=/data
+ENV OPENGATEWAY_HOME=/data
 VOLUME /data
 EXPOSE 8787
-ENTRYPOINT ["gw"]
+ENTRYPOINT ["opengateway"]
 CMD ["serve", "--listen", "0.0.0.0:8787"]

@@ -1,0 +1,22 @@
+{% match phase %}
+{% when Phase::Waiting with { sent } %}
+<div id="sign-in-state" data-live="2" hx-get="/admin/logins/{{ id|urlencode_strict }}/state" hx-trigger="gwtick" hx-swap="outerMorph">
+<p class="state idle" role="status">{% if *sent %}Signing in…{% else %}Waiting for you to finish signing in. This page updates by itself.{% endif %}</p>
+</div>
+{% when Phase::Done with { message, warn } %}
+<div id="sign-in-state">
+<p class="flash{% if *warn %} failed{% endif %}" role="status">{{ message }}</p>
+<p><a class="button primary" href="/admin/account/{{ path }}">Open {{ name }}</a></p>
+</div>
+{% when Phase::Failed with (message) %}
+<div id="sign-in-state">
+<p class="flash failed" role="alert">Sign-in failed: {{ message }}</p>
+<form method="post" action="/admin/logins/{{ id|urlencode_strict }}/retry" class="inline"><button type="submit" class="primary">Try again</button></form>
+<a href="/admin/accounts">Back to accounts</a>
+</div>
+{% when Phase::Gone %}
+<div id="sign-in-state">
+<p class="flash failed" role="alert">This sign-in is no longer running. It may have expired, or OpenGateway restarted.</p>
+<a href="/admin/accounts">Back to accounts</a>
+</div>
+{% endmatch %}

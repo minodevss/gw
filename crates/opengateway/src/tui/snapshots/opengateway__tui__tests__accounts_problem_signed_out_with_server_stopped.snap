@@ -1,0 +1,34 @@
+---
+source: crates/opengateway/src/tui/tests.rs
+expression: harness.render()
+---
+ OpenGateway    Accounts   Activity   Models   Keys                                                             stopped
+
+ Server is not running. Start it with: opengateway serve --listen <addr>
+ Anthropic                                           Signed out (refresh failed 2025-11-16 14:02 UTC). Press enter to
+   claude-max-1   ━━━━━━━───   72%  1h 12m           sign in again.
+   anthropic-api  pay as you go
+   claude-max-2   limited           41m              chatgpt-pro-2
+                                                     ChatGPT subscription (device code)
+ OpenAI
+   chatgpt-pro-1  ━━────────   18%  3h 02m
+   chatgpt-pro-2  sign in needed
+
+ Custom
+   ollama         ready
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ↑↓ select   enter actions   a add   / filter   ? help
